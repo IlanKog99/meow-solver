@@ -12,11 +12,14 @@ sealed interface Check {
 
 object AutoSolver {
     /**
-     * Taps for every missing solution cat except one, in random order: the cat, then the cells it rules out.
+     * Taps for every missing solution cat except one, in the user's cat order (random by default); the last one is held back: the cat, then the cells it rules out.
      * Planned on a virtual copy of the board so no cell is ever tapped twice (a second tap would clear an X).
      */
-    fun plan(b: Board, sol: IntArray, rnd: Random = Random): List<Tap> {
-        val todo = MovePlanner.remaining(b, sol).shuffled(rnd)
+    fun plan(
+        b: Board, sol: IntArray,
+        order: CatOrder = CatOrder.RANDOM, reverse: Boolean = false, withX: Boolean = true, rnd: Random = Random,
+    ): List<Tap> {
+        val todo = Order.cells(b, sol, order, reverse, rnd)
         if (todo.size <= 1) return emptyList()
         val state = b.state.copyOf()
         val out = mutableListOf<Tap>()
@@ -26,6 +29,7 @@ object AutoSolver {
             val cat = MovePlanner.catTaps(b, cell, state[cell])
             out += cat.dropLast(1) + cat.last().copy(pauseAfterMs = MovePlanner.CLEAR_PAUSE_MS)
             state[cell] = Cell.CAT
+            if (!withX) continue
             for (i in MovePlanner.xTargetsFor(b, state, cell)) {
                 out += Tap(b.cx(i % b.n), b.cy(i / b.n), false, MovePlanner.GAP_MS)
                 state[i] = Cell.X

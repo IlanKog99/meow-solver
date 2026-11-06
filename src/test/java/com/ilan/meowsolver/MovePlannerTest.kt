@@ -1,5 +1,6 @@
 package com.ilan.meowsolver
 
+import com.ilan.meowsolver.core.CatOrder
 import com.ilan.meowsolver.core.Cell
 import com.ilan.meowsolver.core.MovePlanner
 import com.ilan.meowsolver.core.Tap
@@ -16,7 +17,7 @@ class MovePlannerTest {
         val rows = LEVEL81.copyOf(); rows[0] = "A A B B B C@ C C"
         val b = boardOf(*rows)
         val left = MovePlanner.remaining(b, sol81).toSet()
-        val picks = (0 until 50).map { MovePlanner.nextCat(b, sol81, Random(it))!! }
+        val picks = (0 until 50).map { MovePlanner.nextCat(b, sol81, rnd = Random(it))!! }
         assertTrue("picks outside remaining: $picks", picks.all { it in left })
         assertTrue("never varied: $picks", picks.toSet().size > 1)
     }
@@ -94,5 +95,12 @@ class MovePlannerTest {
     @Test fun strokeTimings() {
         assertEquals(listOf(listOf(0L, 40L)), MovePlanner.strokes(Tap(0, 0, false, 0), 90).map { it.toList() })
         assertEquals(listOf(listOf(0L, 40L), listOf(130L, 40L)), MovePlanner.strokes(Tap(0, 0, true, 0), 90).map { it.toList() })
+    }
+
+    @Test fun nextCatFollowsOrder() {
+        val b = boardOf(*LEVEL81)
+        assertEquals(0 * 8 + 5, MovePlanner.nextCat(b, sol81, CatOrder.ROWS, reverse = false))
+        assertEquals(7 * 8 + 0, MovePlanner.nextCat(b, sol81, CatOrder.ROWS, reverse = true))
+        assertEquals(7 * 8 + 0, MovePlanner.nextCat(b, sol81, CatOrder.COLUMNS, reverse = false)) // col 0 is row 7
     }
 }

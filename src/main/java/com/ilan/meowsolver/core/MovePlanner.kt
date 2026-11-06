@@ -12,8 +12,9 @@ object MovePlanner {
     const val CLEAR_PAUSE_MS = 350L
     const val STROKE_MS = 40L
 
-    /** First row (top → bottom) whose solution cell has no cat yet. */
-    fun nextCat(b: Board, sol: IntArray, rnd: Random = Random): Int? = remaining(b, sol).randomOrNull(rnd)
+    /** Next solution cell without a cat, in the user's order (random by default). */
+    fun nextCat(b: Board, sol: IntArray, order: CatOrder = CatOrder.RANDOM, reverse: Boolean = false, rnd: Random = Random): Int? =
+        Order.cells(b, sol, order, reverse, rnd).firstOrNull()
 
     fun remaining(b: Board, sol: IntArray): List<Int> =
         (0 until b.n).map { b.idx(it, sol[it]) }.filter { b.state[it] != Cell.CAT }

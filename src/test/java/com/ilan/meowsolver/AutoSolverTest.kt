@@ -2,6 +2,7 @@ package com.ilan.meowsolver
 
 import com.ilan.meowsolver.core.AutoSolver
 import com.ilan.meowsolver.core.Board
+import com.ilan.meowsolver.core.CatOrder
 import com.ilan.meowsolver.core.Cell
 import com.ilan.meowsolver.core.Check
 import com.ilan.meowsolver.core.MovePlanner
@@ -99,7 +100,7 @@ class AutoSolverTest {
         val b = boardOf(*rows)
         val sol = Solver.solve(b)!!
         // Random order: pick a seed whose plan includes cell 5 (it's left out only when it is the held-back last cat).
-        val plan = (0 until 50).map { AutoSolver.plan(b, sol, Random(it)) }.first { p -> p.any { b.cellOf(it) == 5 } }
+        val plan = (0 until 50).map { AutoSolver.plan(b, sol, rnd = Random(it)) }.first { p -> p.any { b.cellOf(it) == 5 } }
         assertEquals(listOf(false, true), plan.filter { b.cellOf(it) == 5 }.map { it.double })
         val done = b.after(plan)
         assertTrue(AutoSolver.check(done, Solver.solve(done)) is Check.LastOnly)
@@ -119,7 +120,33 @@ class AutoSolverTest {
     @Test fun planOrderIsShuffled() {
         val b = Fixtures.board("hi_211922.jpg")
         val sol = Solver.solve(b)!!
-        val orders = (0 until 20).map { seed -> AutoSolver.plan(b, sol, Random(seed)).filter { it.double }.map { b.cellOf(it) } }
+        val orders = (0 until 20).map { seed -> AutoSolver.plan(b, sol, rnd = Random(seed)).filter { it.double }.map { b.cellOf(it) } }
         assertTrue("plan order never varied", orders.toSet().size > 1)
+    }
+
+    @Test fun catsOnlyPlanHasNoXTapsAndSolvesEveryFixture() {
+        val failures = Fixtures.expected().mapNotNull { e ->
+            val b = Fixtures.board(e.name)
+            val sol = Solver.solve(b)!!
+            val plan = AutoSolver.plan(b, sol, withX = false)
+            val solCells = sol.mapIndexed { r, c -> r * b.n + c }.toSet()
+            if (plan.any { b.cellOf(it) !in solCells }) return@mapNotNull "${e.name}: tapped a non-solution cell"
+            val mid = b.after(plan)
+            val c = AutoSolver.check(mid, Solver.solve(mid))
+            if (MovePlanner.remaining(b, sol).isEmpty()) return@mapNotNull null
+            if (c !is Check.LastOnly) return@mapNotNull "${e.name}: after plan $c"
+            val fin = mid.after(AutoSolver.lastCatTaps(mid, c.cell))
+            rulesProblem(fin)?.let { "${e.name}: $it" }
+        }
+        assertTrue(failures.joinToString("\n"), failures.isEmpty())
+    }
+
+    @Test fun rowsPlanGoesTopToBottomAndHoldsBackTheBottomCat() {
+        val b = boardOf(*LEVEL81)
+        val sol = Solver.solve(b)!!
+        val cats = AutoSolver.plan(b, sol, CatOrder.ROWS, reverse = false).filter { it.double }.map { b.cellOf(it) / 8 }
+        assertEquals((0 until 7).toList(), cats)
+        val up = AutoSolver.plan(b, sol, CatOrder.ROWS, reverse = true).filter { it.double }.map { b.cellOf(it) / 8 }
+        assertEquals((7 downTo 1).toList(), up)
     }
 }
