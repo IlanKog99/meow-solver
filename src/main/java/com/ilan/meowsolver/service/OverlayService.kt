@@ -49,6 +49,7 @@ class OverlayService : AccessibilityService() {
         private const val K_Y = "panelY"
         private const val CAPTURE_DELAY_MS = 150L
         private const val RETRY_MS = 400L
+        private const val THROTTLE_RETRY_MS = 1000L // takeScreenshot is rate-limited to ~1/s
         private const val FLASH_MS = 2000L
         private const val HINT_MS = 5000L
         private const val NO_SOLUTION = "No solution — a placed cat is wrong"
@@ -310,6 +311,7 @@ class OverlayService : AccessibilityService() {
                 try {
                     handleBoard(BoardReader.read(px, w, h), needSolution, action)
                 } catch (_: BoardNotFound) {
+                    marks = Marks()
                     done("Open a Meowdoku puzzle first")
                 } catch (_: Exception) {
                     setPanelTouchable(true); done(READ_FAIL)
@@ -320,7 +322,10 @@ class OverlayService : AccessibilityService() {
 
             override fun onFailure(errorCode: Int) {
                 if (s != session) return
-                if (retry) handler.postDelayed({ if (s == session) capture(s, false, needSolution, action) }, RETRY_MS)
+                if (retry) {
+                    val delay = if (errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) THROTTLE_RETRY_MS else RETRY_MS
+                    handler.postDelayed({ if (s == session) capture(s, false, needSolution, action) }, delay)
+                }
                 else { setOverlayVisible(true); done(READ_FAIL) }
             }
         }) } catch (_: Exception) {
