@@ -1,5 +1,7 @@
 package com.ilan.meowsolver.core
 
+import kotlin.random.Random
+
 /** Result of re-reading the board during auto-Answer. */
 sealed interface Check {
     data object Solved : Check
@@ -10,11 +12,11 @@ sealed interface Check {
 
 object AutoSolver {
     /**
-     * Taps for every missing solution cat except the last (top → bottom): the cat, then the cells it rules out.
+     * Taps for every missing solution cat except one, in random order: the cat, then the cells it rules out.
      * Planned on a virtual copy of the board so no cell is ever tapped twice (a second tap would clear an X).
      */
-    fun plan(b: Board, sol: IntArray): List<Tap> {
-        val todo = MovePlanner.remaining(b, sol)
+    fun plan(b: Board, sol: IntArray, rnd: Random = Random): List<Tap> {
+        val todo = MovePlanner.remaining(b, sol).shuffled(rnd)
         if (todo.size <= 1) return emptyList()
         val state = b.state.copyOf()
         val out = mutableListOf<Tap>()

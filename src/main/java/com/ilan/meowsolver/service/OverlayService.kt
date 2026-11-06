@@ -234,7 +234,9 @@ class OverlayService : AccessibilityService() {
 
     private fun placeCat() = withBoard { b, sol ->
         sol ?: return@withBoard done(NO_SOLUTION)
-        val cell = MovePlanner.nextCat(b, sol) ?: return@withBoard done("Solved")
+        val left = MovePlanner.remaining(b, sol)
+        // Hint still on screen → place that cat, so Hint then Cat agree.
+        val cell = marks.hint?.takeIf { it in left } ?: left.randomOrNull() ?: return@withBoard done("Solved")
         runTaps(MovePlanner.catTaps(b, cell)) {
             marks = marks.copy(rings = marks.rings - cell, hint = marks.hint.takeIf { it != cell })
             "Cat placed: row ${cell / b.n + 1}, col ${cell % b.n + 1}"

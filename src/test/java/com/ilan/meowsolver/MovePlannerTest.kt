@@ -5,14 +5,20 @@ import com.ilan.meowsolver.core.MovePlanner
 import com.ilan.meowsolver.core.Tap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import kotlin.random.Random
 
 class MovePlannerTest {
     private val sol81 = intArrayOf(5, 2, 6, 4, 7, 1, 3, 0)
 
-    @Test fun nextCatIsFirstRowWithoutCat() {
+    @Test fun nextCatIsARandomRemainingCell() {
         val rows = LEVEL81.copyOf(); rows[0] = "A A B B B C@ C C"
-        assertEquals(1 * 8 + 2, MovePlanner.nextCat(boardOf(*rows), sol81))
+        val b = boardOf(*rows)
+        val left = MovePlanner.remaining(b, sol81).toSet()
+        val picks = (0 until 50).map { MovePlanner.nextCat(b, sol81, Random(it))!! }
+        assertTrue("picks outside remaining: $picks", picks.all { it in left })
+        assertTrue("never varied: $picks", picks.toSet().size > 1)
     }
 
     @Test fun nextCatNullWhenSolved() {

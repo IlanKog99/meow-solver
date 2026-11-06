@@ -56,3 +56,10 @@ Removing wrong cats; X after the last cat; speed tuning beyond the existing doub
 - Status-bar / nav-bar icons follow the resolved theme (light icons on dark).
 - Overlay card unchanged (already dark).
 - Tests: `ThemeMode` mapping unit test; Paparazzi `setupDark` snapshot alongside the light ones.
+
+## Addendum: random order (approved 2026-11-07)
+- **Hint** shows a random remaining solution cell (not top-to-bottom).
+- **Cat** places the hinted cell while its 5 s hint is still showing and that cell still needs a cat; otherwise a random remaining cell.
+- **Answer** plans cats in shuffled order; the cat left for the final check is whichever comes last in the shuffle. Each fix round reshuffles.
+- `MovePlanner.nextCat(b, sol, rnd: Random = Random)` and `AutoSolver.plan(b, sol, rnd: Random = Random)`; tests pass seeded `Random`.
+- Tests: nextCat returns a remaining cell and varies across seeds; plan leaves exactly one remaining cell untouched; plan order varies across seeds.

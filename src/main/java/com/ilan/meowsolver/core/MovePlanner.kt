@@ -1,5 +1,7 @@
 package com.ilan.meowsolver.core
 
+import kotlin.random.Random
+
 import kotlin.math.abs
 
 /** One gesture on a cell. double = fast double-tap (places a cat); single toggles empty ↔ X. */
@@ -11,7 +13,7 @@ object MovePlanner {
     const val STROKE_MS = 40L
 
     /** First row (top → bottom) whose solution cell has no cat yet. */
-    fun nextCat(b: Board, sol: IntArray): Int? = remaining(b, sol).firstOrNull()
+    fun nextCat(b: Board, sol: IntArray, rnd: Random = Random): Int? = remaining(b, sol).randomOrNull(rnd)
 
     fun remaining(b: Board, sol: IntArray): List<Int> =
         (0 until b.n).map { b.idx(it, sol[it]) }.filter { b.state[it] != Cell.CAT }

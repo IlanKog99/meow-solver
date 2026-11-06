@@ -10,6 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.math.abs
+import kotlin.random.Random
 
 class AutoSolverTest {
     private val sol81 = intArrayOf(5, 2, 6, 4, 7, 1, 3, 0)
@@ -52,9 +53,8 @@ class AutoSolverTest {
                     (taps.size == 2 && !taps[0].double && taps[1].double && b.state[cell] == Cell.X && cell in solCells)
                 assertTrue("${e.name}: cell $cell tapped $taps", ok)
             }
-            MovePlanner.remaining(b, sol).lastOrNull()?.let { last ->
-                assertTrue("${e.name}: last cat $last tapped", last !in byCell)
-            }
+            val left = MovePlanner.remaining(b, sol)
+            if (left.isNotEmpty()) assertEquals("${e.name}: untouched remaining cats", 1, left.count { it !in byCell })
         }
     }
 
@@ -98,10 +98,11 @@ class AutoSolverTest {
         val rows = LEVEL81.copyOf(); rows[0] = "A A B B B C* C C" // X sits on row 0's solution cell (col 5)
         val b = boardOf(*rows)
         val sol = Solver.solve(b)!!
-        val taps = AutoSolver.plan(b, sol).filter { b.cellOf(it) == 5 }
-        assertEquals(listOf(false, true), taps.map { it.double })
-        val done = b.after(AutoSolver.plan(b, sol))
-        assertEquals(Check.LastOnly(7 * 8 + 0), AutoSolver.check(done, Solver.solve(done)))
+        // Random order: pick a seed whose plan includes cell 5 (it's left out only when it is the held-back last cat).
+        val plan = (0 until 50).map { AutoSolver.plan(b, sol, Random(it)) }.first { p -> p.any { b.cellOf(it) == 5 } }
+        assertEquals(listOf(false, true), plan.filter { b.cellOf(it) == 5 }.map { it.double })
+        val done = b.after(plan)
+        assertTrue(AutoSolver.check(done, Solver.solve(done)) is Check.LastOnly)
     }
 
     @Test fun catDoubleTapIsIsolatedByPauses() {
@@ -113,5 +114,12 @@ class AutoSolverTest {
                 if (i > 0) assertEquals("pause before cat $i", MovePlanner.CLEAR_PAUSE_MS, plan[i - 1].pauseAfterMs)
             }
         }
+    }
+
+    @Test fun planOrderIsShuffled() {
+        val b = Fixtures.board("hi_211922.jpg")
+        val sol = Solver.solve(b)!!
+        val orders = (0 until 20).map { seed -> AutoSolver.plan(b, sol, Random(seed)).filter { it.double }.map { b.cellOf(it) } }
+        assertTrue("plan order never varied", orders.toSet().size > 1)
     }
 }
