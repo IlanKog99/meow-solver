@@ -34,3 +34,8 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     testImplementation("junit:junit:4.13.2")
 }
+
+// Unit tests read fixture screenshots with javax.imageio; let only test compiles see the JDK.
+tasks.withType<org.jetbrains.kotlin.gradle.tasks.KotlinCompile>().configureEach {
+    if (name.contains("UnitTest")) compilerOptions.noJdk.set(false)
+}
