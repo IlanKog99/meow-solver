@@ -452,8 +452,217 @@ Delete the stale `src/test/snapshots/images/com.ilan.meowsolver_UiSnapshotTest_p
 
 ---
 
-### Task 3: Final review, verify, deliver
+### Task 3: App dark mode (System · Light · Dark)
 
-- [ ] Final whole-branch review (superpowers:requesting-code-review) over `3cb066d..HEAD`; fix Critical/Important.
+**Files:**
+- Create: `src/main/java/com/ilan/meowsolver/ui/ThemeMode.kt`, `src/test/java/com/ilan/meowsolver/ThemeModeTest.kt`
+- Modify: `src/main/java/com/ilan/meowsolver/ui/SetupScreen.kt`, `src/main/java/com/ilan/meowsolver/MainActivity.kt`, `src/test/java/com/ilan/meowsolver/UiSnapshotTest.kt`; snapshots under `src/test/snapshots/images/`
+
+**Interfaces:**
+- Consumes: `Meow.Clay`, `Meow.OnCard`, `MeowIcons.*`, `OverlayService.PREFS`.
+- Produces: `enum class ThemeMode { SYSTEM, LIGHT, DARK }` with `label`, `isDark(systemDark)`, `ThemeMode.PREF_KEY = "themeMode"`, `ThemeMode.fromPref(String?)`; `data class SetupColors(bg, card, ink, inkMuted)` with `SetupColors.Light` / `SetupColors.Dark`; `data class SetupState(serviceOn: Boolean, doubleTapMs: Int, themeMode: ThemeMode = ThemeMode.SYSTEM)`; `SetupScreen(state, dark: Boolean, onStart, onAppInfo, onAccessibility, onDoubleTapMs, onThemeMode: (ThemeMode) -> Unit)`.
+
+- [ ] **Step 1: Failing tests**
+
+`src/test/java/com/ilan/meowsolver/ThemeModeTest.kt`:
+```kotlin
+package com.ilan.meowsolver
+
+import com.ilan.meowsolver.ui.ThemeMode
+import org.junit.Assert.assertEquals
+import org.junit.Test
+
+class ThemeModeTest {
+    @Test fun systemFollowsPhone() {
+        assertEquals(true, ThemeMode.SYSTEM.isDark(systemDark = true))
+        assertEquals(false, ThemeMode.SYSTEM.isDark(systemDark = false))
+    }
+    @Test fun explicitModesIgnorePhone() {
+        assertEquals(false, ThemeMode.LIGHT.isDark(systemDark = true))
+        assertEquals(true, ThemeMode.DARK.isDark(systemDark = false))
+    }
+    @Test fun prefParsingDefaultsToSystem() {
+        assertEquals(ThemeMode.DARK, ThemeMode.fromPref("DARK"))
+        assertEquals(ThemeMode.SYSTEM, ThemeMode.fromPref(null))
+        assertEquals(ThemeMode.SYSTEM, ThemeMode.fromPref("purple"))
+    }
+}
+```
+
+In `UiSnapshotTest.kt` replace the two setup tests with:
+```kotlin
+    @Test fun setupOff() { tall(); paparazzi.snapshot { SetupScreen(SetupState(serviceOn = false, doubleTapMs = 90), dark = false, {}, {}, {}, {}, {}) } }
+    @Test fun setupOn() { tall(); paparazzi.snapshot { SetupScreen(SetupState(serviceOn = true, doubleTapMs = 120, themeMode = ThemeMode.LIGHT), dark = false, {}, {}, {}, {}, {}) } }
+    @Test fun setupDark() { tall(); paparazzi.snapshot { SetupScreen(SetupState(serviceOn = true, doubleTapMs = 90, themeMode = ThemeMode.DARK), dark = true, {}, {}, {}, {}, {}) } }
+```
+(add import `com.ilan.meowsolver.ui.ThemeMode`).
+
+Run `gradle testDebugUnitTest --no-daemon -q --tests '*ThemeModeTest*' --tests '*UiSnapshotTest*'` → expect compile FAIL.
+
+- [ ] **Step 2: `ui/ThemeMode.kt`**
+```kotlin
+package com.ilan.meowsolver.ui
+
+/** App (setup screen) appearance. The overlay card is always dark. */
+enum class ThemeMode(val label: String) {
+    SYSTEM("System"), LIGHT("Light"), DARK("Dark");
+
+    fun isDark(systemDark: Boolean) = when (this) {
+        SYSTEM -> systemDark
+        LIGHT -> false
+        DARK -> true
+    }
+
+    companion object {
+        const val PREF_KEY = "themeMode"
+        fun fromPref(v: String?) = entries.firstOrNull { it.name == v } ?: SYSTEM
+    }
+}
+```
+
+- [ ] **Step 3: `ui/SetupScreen.kt`** — add palette + local, thread colours through, add Appearance section.
+
+Add near the top (after imports; add imports `androidx.compose.foundation.border`, `androidx.compose.runtime.CompositionLocalProvider`, `androidx.compose.runtime.staticCompositionLocalOf`):
+```kotlin
+data class SetupColors(val bg: Color, val card: Color, val ink: Color, val inkMuted: Color) {
+    companion object {
+        val Light = SetupColors(Meow.Cream, Color.White, Meow.Ink, Meow.InkMuted)
+        val Dark = SetupColors(Color(0xFF1C1714), Color(0xFF2A2420), Color(0xFFF3ECE6), Color(0xFFB3A59B))
+    }
+}
+
+private val LocalSetupColors = staticCompositionLocalOf { SetupColors.Light }
+
+data class SetupState(val serviceOn: Boolean, val doubleTapMs: Int, val themeMode: ThemeMode = ThemeMode.SYSTEM)
+```
+(delete the old `SetupState` line.)
+
+Replace the `SetupScreen` function with:
+```kotlin
+@Composable
+fun SetupScreen(
+    state: SetupState,
+    dark: Boolean,
+    onStart: () -> Unit, onAppInfo: () -> Unit, onAccessibility: () -> Unit, onDoubleTapMs: (Int) -> Unit,
+    onThemeMode: (ThemeMode) -> Unit,
+) {
+    val c = if (dark) SetupColors.Dark else SetupColors.Light
+    CompositionLocalProvider(LocalSetupColors provides c) {
+        Column(
+            Modifier.fillMaxSize().background(c.bg).safeDrawingPadding().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 32.dp),
+        ) {
+            Box(Modifier.size(64.dp).clip(CircleShape).background(Meow.Clay), contentAlignment = Alignment.Center) {
+                Icon(MeowIcons.Cat, contentDescription = null, tint = Meow.OnCard, modifier = Modifier.size(36.dp))
+            }
+            Text("Meow Solver", fontSize = 28.sp, fontWeight = FontWeight.Medium, color = c.ink, modifier = Modifier.padding(top = 16.dp))
+            Text(
+                "Hint, place, or solve Meowdoku from a floating panel.",
+                fontSize = 15.sp, color = c.inkMuted, modifier = Modifier.padding(top = 4.dp),
+            )
+            Button(
+                onClick = onStart, shape = RoundedCornerShape(16.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Meow.Clay, contentColor = Color.White),
+                modifier = Modifier.fillMaxWidth().padding(top = 24.dp).height(56.dp),
+            ) { Text(if (state.serviceOn) "Start overlay" else "Turn on overlay", fontSize = 17.sp) }
+
+            SectionTitle("Setup")
+            Card {
+                Step(1, "Allow restricted settings", "App info → ⋮ → Allow restricted settings", state.serviceOn, "App info", onAppInfo)
+                HorizontalDivider(color = c.ink.copy(alpha = 0.08f))
+                Step(2, "Turn on accessibility", "Installed apps → Meow Solver overlay → On", state.serviceOn, "Open", onAccessibility)
+            }
+
+            SectionTitle("How it works")
+            Card {
+                HowRow(MeowIcons.Eye, "Reveal", "Rings every remaining cat. Tap again to hide.")
+                HowRow(MeowIcons.Bulb, "Hint", "Shows the next cat for 5 seconds")
+                HowRow(MeowIcons.Cat, "Cat", "Places the next cat for you")
+                HowRow(MeowIcons.X, "X", "Marks every cell a cat rules out")
+                HowRow(MeowIcons.FastForward, "Answer", "Solves the level. Tap Stop to halt.")
+            }
+
+            SectionTitle("Appearance")
+            Card {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    for (m in ThemeMode.entries) {
+                        val selected = m == state.themeMode
+                        Box(
+                            Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(12.dp))
+                                .background(if (selected) Meow.Clay else Color.Transparent)
+                                .border(1.dp, if (selected) Meow.Clay else c.ink.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                                .clickable(onClickLabel = m.label) { onThemeMode(m) },
+                            contentAlignment = Alignment.Center,
+                        ) { Text(m.label, color = if (selected) Color.White else c.ink, fontSize = 14.sp) }
+                    }
+                }
+            }
+
+            SectionTitle("Tuning")
+            Card {
+                Text("Double-tap speed · ${state.doubleTapMs} ms", color = c.ink, fontSize = 15.sp)
+                Slider(
+                    value = state.doubleTapMs.toFloat(), onValueChange = { onDoubleTapMs((it / 10).roundToInt() * 10) },
+                    valueRange = 60f..200f, steps = 13,
+                    colors = SliderDefaults.colors(
+                        thumbColor = Meow.Clay, activeTrackColor = Meow.Clay, inactiveTrackColor = c.ink.copy(alpha = 0.12f),
+                        activeTickColor = Color.White.copy(alpha = 0.6f), inactiveTickColor = c.inkMuted.copy(alpha = 0.5f),
+                    ),
+                )
+                Text("Raise it if Cat places an X instead.", color = c.inkMuted, fontSize = 13.sp)
+            }
+        }
+    }
+}
+```
+(add import `androidx.compose.foundation.clickable`.)
+
+In the private composables, replace colour references: `SectionTitle` → `LocalSetupColors.current.inkMuted`; `Card` background `Color.White` → `LocalSetupColors.current.card`; `Step`: `Meow.Ink.copy(alpha = 0.08f)` → `ink.copy(alpha = 0.12f)`, every `Meow.Ink` → `ink`, `Meow.InkMuted` → `inkMuted` (with `val ink = LocalSetupColors.current.ink; val inkMuted = LocalSetupColors.current.inkMuted` at the top of `Step` and `HowRow`); `HowRow` likewise. Keep `Meow.Clay` and `Color.White` on clay surfaces.
+
+- [ ] **Step 4: `MainActivity.kt`** — persist and apply the mode, flip system-bar icons:
+```kotlin
+// fields
+private var themeMode by mutableStateOf(ThemeMode.SYSTEM)
+
+// in onCreate, after doubleTapMs is read:
+themeMode = ThemeMode.fromPref(prefs.getString(ThemeMode.PREF_KEY, null))
+```
+Replace `enableEdgeToEdge()` + `setContent { … }` with:
+```kotlin
+        setContent {
+            val dark = themeMode.isDark(isSystemInDarkTheme())
+            LaunchedEffect(dark) {
+                val bar = if (dark) SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+                          else SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+                enableEdgeToEdge(statusBarStyle = bar, navigationBarStyle = bar)
+            }
+            SetupScreen(
+                SetupState(serviceOn, doubleTapMs, themeMode),
+                dark = dark,
+                onStart = {
+                    val svc = OverlayService.instance
+                    if (svc == null) openAccessibility() else { svc.showOverlay(); moveTaskToBack(true) }
+                },
+                onAppInfo = {
+                    startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:$packageName")))
+                },
+                onAccessibility = ::openAccessibility,
+                onDoubleTapMs = { doubleTapMs = it; prefs.edit().putInt(OverlayService.K_DOUBLE_MS, it).apply() },
+                onThemeMode = { themeMode = it; prefs.edit().putString(ThemeMode.PREF_KEY, it.name).apply() },
+            )
+        }
+```
+Imports: `android.graphics.Color as AndroidColor`, `androidx.activity.SystemBarStyle`, `androidx.compose.foundation.isSystemInDarkTheme`, `androidx.compose.runtime.LaunchedEffect`, `com.ilan.meowsolver.ui.ThemeMode`.
+
+- [ ] **Step 5: Build, record, test** — `gradle assembleDebug recordPaparazziDebug testDebugUnitTest --no-daemon -q` → exit 0; 35 + 3 (ThemeModeTest) + 1 (setupDark) = 39 tests.
+
+- [ ] **Step 6: Visual review** — Read `setupDark`, `setupOn`, `setupOff` PNGs: dark background/cards/text readable, picker shows the selected mode in clay, slider/track visible in dark, light screens unchanged except the new Appearance section.
+
+- [ ] **Step 7: Commit** — `git add` the changed/new files + snapshots; message `feat(app): System/Light/Dark appearance for the setup screen` (+ trailer).
+
+---
+
+### Task 4: Final review, verify, deliver
+
+- [ ] Final whole-branch review (superpowers:requesting-code-review) over `3cb066d..HEAD` (Tasks 1–2 already final-reviewed; review Task 3's range); fix Critical/Important.
 - [ ] `gradle clean assembleRelease testDebugUnitTest --no-daemon -q`; confirm counts, `apksigner verify`, release APK size.
 - [ ] Send Ilan: release APK, new panel snapshots, on-device checklist for Reveal / Answer / Stop.

@@ -49,3 +49,10 @@ Reveal rings, if on, are refreshed from every read during the run.
 
 ## Out of scope
 Removing wrong cats; X after the last cat; speed tuning beyond the existing double-tap slider.
+
+## Addendum: app dark mode (approved 2026-11-07)
+- Setup screen gets an **Appearance** section: 3-way picker **System · Light · Dark**, default System, saved in prefs key `"themeMode"` (values `SYSTEM`/`LIGHT`/`DARK`; unknown → System).
+- Dark palette: background `#1C1714`, cards `#2A2420`, text `#F3ECE6`, secondary text `#B3A59B`; clay `#D97757` unchanged. Light palette = today's.
+- Status-bar / nav-bar icons follow the resolved theme (light icons on dark).
+- Overlay card unchanged (already dark).
+- Tests: `ThemeMode` mapping unit test; Paparazzi `setupDark` snapshot alongside the light ones.
