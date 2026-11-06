@@ -1,0 +1,3 @@
+<resources>
+    <string name="desc">Shows a floating panel over Meowdoku. It reads the board from the screen, solves it, and taps cells for you when you press its buttons.</string>
+</resources>
