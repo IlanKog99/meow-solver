@@ -1,0 +1,3 @@
+<resources>
+    <string name="a11y_desc">Shows a floating panel over Meowdoku. It reads the board from the screen and taps cells only when you press its buttons.</string>
+</resources>
