@@ -31,6 +31,9 @@ import com.ilan.meowsolver.core.BoardNotFound
 import com.ilan.meowsolver.core.BoardReader
 import com.ilan.meowsolver.core.Check
 import com.ilan.meowsolver.core.MovePlanner
+import com.ilan.meowsolver.core.OverlaySettings
+import com.ilan.meowsolver.core.PanelButton
+import com.ilan.meowsolver.core.overlaySettings
 import com.ilan.meowsolver.core.Solver
 import com.ilan.meowsolver.core.Tap
 import com.ilan.meowsolver.ui.Bubble
@@ -77,6 +80,9 @@ class OverlayService : AccessibilityService() {
     private var mode by mutableStateOf(Mode.CARD)
     private var panel by mutableStateOf(PanelState("Ready", busy = false, revealOn = false))
     private var marks by mutableStateOf(Marks())
+    private var settings = OverlaySettings()
+    // Held as a field: SharedPreferences keeps listeners weakly.
+    private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> applySettings() }
     private var hintToken = 0
     private var stoppedAt = 0L // a finger-down cancels in-flight gestures; ignore the Stop tap's own click after that
     private var session = 0 // bumped by close()/unbind: in-flight work from an older session is dropped
@@ -89,6 +95,7 @@ class OverlayService : AccessibilityService() {
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         taps = TapRunner(this, handler)
         panel = panel.copy(revealOn = prefs.getBoolean(K_REVEAL, false))
+        prefs.registerOnSharedPreferenceChangeListener(prefListener); applySettings()
         owner = OverlayOwner().also { it.start() }
         instance = this
         showOverlay()
@@ -100,6 +107,7 @@ class OverlayService : AccessibilityService() {
     override fun onDestroy() {
         instance = null
         session++
+        if (::prefs.isInitialized) prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
         removeViews()
         owner.stop()
         super.onDestroy()
@@ -108,9 +116,21 @@ class OverlayService : AccessibilityService() {
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
         session++
+        if (::prefs.isInitialized) prefs.unregisterOnSharedPreferenceChangeListener(prefListener)
         removeViews()
         owner.stop()
         return super.onUnbind(intent)
+    }
+
+    private fun applySettings() {
+        settings = prefs.overlaySettings()
+        panel = panel.copy(buttons = settings.buttons)
+        if (PanelButton.REVEAL !in settings.buttons && panel.revealOn) {
+            panel = panel.copy(revealOn = false)
+            marks = marks.copy(rings = emptyList())
+            prefs.edit().putBoolean(K_REVEAL, false).apply()
+        }
+        if (PanelButton.ANSWER !in settings.buttons && panel.autoRunning) stopAnswer()
     }
 
     // ---------- windows ----------
@@ -225,7 +245,7 @@ class OverlayService : AccessibilityService() {
 
     private fun hint() = withBoard { b, sol ->
         sol ?: return@withBoard done(NO_SOLUTION)
-        val cell = MovePlanner.nextCat(b, sol) ?: return@withBoard done("Solved")
+        val cell = MovePlanner.nextCat(b, sol, settings.order, settings.reverse) ?: return@withBoard done("Solved")
         val token = ++hintToken
         marks = marks.copy(hint = cell)
         handler.postDelayed({ if (token == hintToken) marks = marks.copy(hint = null) }, HINT_MS)
@@ -234,9 +254,8 @@ class OverlayService : AccessibilityService() {
 
     private fun placeCat() = withBoard { b, sol ->
         sol ?: return@withBoard done(NO_SOLUTION)
-        val left = MovePlanner.remaining(b, sol)
         // Hint still on screen → place that cat, so Hint then Cat agree.
-        val cell = marks.hint?.takeIf { it in left } ?: left.randomOrNull() ?: return@withBoard done("Solved")
+        val cell = marks.hint?.takeIf { it in MovePlanner.remaining(b, sol) } ?: MovePlanner.nextCat(b, sol, settings.order, settings.reverse) ?: return@withBoard done("Solved")
         runTaps(MovePlanner.catTaps(b, cell)) {
             marks = marks.copy(rings = marks.rings - cell, hint = marks.hint.takeIf { it != cell })
             "Cat placed: row ${cell / b.n + 1}, col ${cell % b.n + 1}"
@@ -289,7 +308,7 @@ class OverlayService : AccessibilityService() {
             }
             is Check.Missing ->
                 if (!first && fixes >= MAX_FIX_ROUNDS) done(FIX_FAIL)
-                else autoTaps(AutoSolver.plan(b, sol!!)) {
+                else autoTaps(AutoSolver.plan(b, sol!!, settings.order, settings.reverse, settings.answerX)) {
                     val s = session
                     handler.postDelayed({
                         if (s == session) answerStep(if (first) 0 else fixes + 1, first = false)

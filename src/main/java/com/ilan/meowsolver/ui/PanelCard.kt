@@ -25,8 +25,10 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ilan.meowsolver.core.PanelButton
 
-data class PanelState(val status: String, val busy: Boolean, val revealOn: Boolean, val autoRunning: Boolean = false)
+data class PanelState(val status: String, val busy: Boolean, val revealOn: Boolean, val autoRunning: Boolean = false,
+    val buttons: Set<PanelButton> = PanelButton.entries.toSet())
 
 @Composable
 fun PanelCard(
@@ -46,14 +48,16 @@ fun PanelCard(
             HeaderIcon(MeowIcons.Minus, "Minimize", onMinimize)
             HeaderIcon(MeowIcons.Power, "Close", onClose)
         }
-        Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+        Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 2.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
             val on = !state.busy
-            ActionButton(MeowIcons.Eye, "Reveal", on, toggled = state.revealOn, onClick = onReveal)
-            ActionButton(MeowIcons.Bulb, "Hint", on, onClick = onHint)
-            ActionButton(MeowIcons.Cat, "Cat", on, filled = true, onClick = onCat)
-            ActionButton(MeowIcons.X, "X", on, onClick = onX)
-            if (state.autoRunning) ActionButton(MeowIcons.Stop, "Stop", true, toggled = true, onClick = onAnswer)
-            else ActionButton(MeowIcons.FastForward, "Answer", on, onClick = onAnswer)
+            if (PanelButton.REVEAL in state.buttons) ActionButton(MeowIcons.Eye, "Reveal", on, toggled = state.revealOn, onClick = onReveal)
+            if (PanelButton.HINT in state.buttons) ActionButton(MeowIcons.Bulb, "Hint", on, onClick = onHint)
+            if (PanelButton.CAT in state.buttons) ActionButton(MeowIcons.Cat, "Cat", on, filled = true, onClick = onCat)
+            if (PanelButton.X in state.buttons) ActionButton(MeowIcons.X, "X", on, onClick = onX)
+            if (PanelButton.ANSWER in state.buttons) {
+                if (state.autoRunning) ActionButton(MeowIcons.Stop, "Stop", true, toggled = true, onClick = onAnswer)
+                else ActionButton(MeowIcons.FastForward, "Answer", on, onClick = onAnswer)
+            }
         }
     }
 }

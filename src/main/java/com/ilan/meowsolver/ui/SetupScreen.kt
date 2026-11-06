@@ -25,18 +25,24 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Slider
 import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.ilan.meowsolver.core.CatOrder
+import com.ilan.meowsolver.core.OverlaySettings
+import com.ilan.meowsolver.core.PanelButton
 import kotlin.math.roundToInt
 
 data class SetupColors(val bg: Color, val card: Color, val ink: Color, val inkMuted: Color) {
@@ -48,7 +54,7 @@ data class SetupColors(val bg: Color, val card: Color, val ink: Color, val inkMu
 
 private val LocalSetupColors = staticCompositionLocalOf { SetupColors.Light }
 
-data class SetupState(val serviceOn: Boolean, val doubleTapMs: Int, val themeMode: ThemeMode = ThemeMode.SYSTEM)
+data class SetupState(val serviceOn: Boolean, val doubleTapMs: Int, val themeMode: ThemeMode = ThemeMode.SYSTEM, val overlay: OverlaySettings = OverlaySettings())
 
 @Composable
 fun SetupScreen(
@@ -56,6 +62,7 @@ fun SetupScreen(
     dark: Boolean,
     onStart: () -> Unit, onAppInfo: () -> Unit, onAccessibility: () -> Unit, onDoubleTapMs: (Int) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
+    onOverlay: (OverlaySettings) -> Unit,
 ) {
     val c = if (dark) SetupColors.Dark else SetupColors.Light
     CompositionLocalProvider(LocalSetupColors provides c) {
@@ -92,20 +99,33 @@ fun SetupScreen(
                 HowRow(MeowIcons.FastForward, "Answer", "Solves the level. Tap Stop to halt.")
             }
 
+            val o = state.overlay
+            SectionTitle("Overlay buttons")
+            Card {
+                for (btn in PanelButton.entries) {
+                    val on = btn in o.buttons
+                    SwitchRow(btn.label, null, on, enabled = !(on && o.buttons.size == 1)) { onOverlay(o.withButton(btn, it)) }
+                }
+            }
+
+            SectionTitle("Cat order")
+            Card {
+                Segmented(CatOrder.entries.map { it.label }, o.order.ordinal) { onOverlay(o.copy(order = CatOrder.entries[it])) }
+                SwitchRow(
+                    "Reverse", if (o.order == CatOrder.RANDOM) "Not used with Random" else null, o.reverse,
+                    enabled = o.order != CatOrder.RANDOM,
+                ) { onOverlay(o.copy(reverse = it)) }
+                Text("Order: ${o.orderLabel} — used by Hint, Cat and Answer", color = c.inkMuted, fontSize = 13.sp)
+            }
+
+            SectionTitle("Answer places")
+            Card {
+                Segmented(listOf("Cats + X's", "Cats only"), if (o.answerX) 0 else 1) { onOverlay(o.copy(answerX = it == 0)) }
+            }
+
             SectionTitle("Appearance")
             Card {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    for (m in ThemeMode.entries) {
-                        val selected = m == state.themeMode
-                        Box(
-                            Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(12.dp))
-                                .background(if (selected) Meow.Clay else Color.Transparent)
-                                .border(1.dp, if (selected) Meow.Clay else c.ink.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
-                                .clickable(onClickLabel = m.label) { onThemeMode(m) },
-                            contentAlignment = Alignment.Center,
-                        ) { Text(m.label, color = if (selected) Color.White else c.ink, fontSize = 14.sp) }
-                    }
-                }
+                Segmented(ThemeMode.entries.map { it.label }, state.themeMode.ordinal) { onThemeMode(ThemeMode.entries[it]) }
             }
 
             SectionTitle("Tuning")
@@ -163,5 +183,42 @@ private fun HowRow(icon: ImageVector, name: String, text: String) {
             Text(name, color = ink, fontSize = 15.sp, fontWeight = FontWeight.Medium)
             Text(text, color = inkMuted, fontSize = 13.sp)
         }
+    }
+}
+
+@Composable
+private fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+    val c = LocalSetupColors.current
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        options.forEachIndexed { i, label ->
+            val sel = i == selected
+            Box(
+                Modifier.weight(1f).height(40.dp).clip(RoundedCornerShape(12.dp))
+                    .background(if (sel) Meow.Clay else Color.Transparent)
+                    .border(1.dp, if (sel) Meow.Clay else c.ink.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
+                    .clickable(onClickLabel = label) { onSelect(i) },
+                contentAlignment = Alignment.Center,
+            ) { Text(label, color = if (sel) Color.White else c.ink, fontSize = 14.sp) }
+        }
+    }
+}
+
+@Composable
+private fun SwitchRow(title: String, detail: String?, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
+    val c = LocalSetupColors.current
+    Row(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, color = c.ink, fontSize = 15.sp)
+            if (detail != null) Text(detail, color = c.inkMuted, fontSize = 13.sp)
+        }
+        Switch(
+            checked = checked, onCheckedChange = onChange, enabled = enabled,
+            colors = SwitchDefaults.colors(
+                checkedThumbColor = Color.White, checkedTrackColor = Meow.Clay, checkedBorderColor = Meow.Clay,
+                uncheckedThumbColor = c.inkMuted, uncheckedTrackColor = c.ink.copy(alpha = 0.12f), uncheckedBorderColor = c.inkMuted,
+                disabledCheckedThumbColor = Color.White, disabledCheckedTrackColor = Meow.Clay, disabledCheckedBorderColor = Meow.Clay,
+                disabledUncheckedThumbColor = c.inkMuted, disabledUncheckedTrackColor = c.ink.copy(alpha = 0.12f), disabledUncheckedBorderColor = c.inkMuted,
+            ),
+        )
     }
 }

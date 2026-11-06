@@ -17,6 +17,9 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import com.ilan.meowsolver.core.MovePlanner
+import com.ilan.meowsolver.core.OverlaySettings
+import com.ilan.meowsolver.core.overlaySettings
+import com.ilan.meowsolver.core.putOverlaySettings
 import com.ilan.meowsolver.service.OverlayService
 import com.ilan.meowsolver.ui.SetupScreen
 import com.ilan.meowsolver.ui.SetupState
@@ -25,6 +28,7 @@ import com.ilan.meowsolver.ui.ThemeMode
 class MainActivity : ComponentActivity() {
     private var serviceOn by mutableStateOf(false)
     private var themeMode by mutableStateOf(ThemeMode.SYSTEM)
+    private var overlay by mutableStateOf(OverlaySettings())
     private var doubleTapMs by mutableIntStateOf(MovePlanner.GAP_MS.toInt())
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -32,13 +36,14 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences(OverlayService.PREFS, MODE_PRIVATE)
         doubleTapMs = prefs.getInt(OverlayService.K_DOUBLE_MS, MovePlanner.GAP_MS.toInt())
         themeMode = ThemeMode.fromPref(prefs.getString(ThemeMode.PREF_KEY, null))
+        overlay = prefs.overlaySettings()
         val systemDark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
         applyBars(themeMode.isDark(systemDark)) // before first frame: no inset jump, right icon colour
         setContent {
             val dark = themeMode.isDark(isSystemInDarkTheme())
             LaunchedEffect(dark) { applyBars(dark) }
             SetupScreen(
-                SetupState(serviceOn, doubleTapMs, themeMode),
+                SetupState(serviceOn, doubleTapMs, themeMode, overlay),
                 dark = dark,
                 onStart = {
                     val svc = OverlayService.instance
@@ -50,6 +55,7 @@ class MainActivity : ComponentActivity() {
                 onAccessibility = ::openAccessibility,
                 onDoubleTapMs = { doubleTapMs = it; prefs.edit().putInt(OverlayService.K_DOUBLE_MS, it).apply() },
                 onThemeMode = { themeMode = it; prefs.edit().putString(ThemeMode.PREF_KEY, it.name).apply() },
+                onOverlay = { overlay = it; prefs.edit().putOverlaySettings(it).apply() },
             )
         }
     }
