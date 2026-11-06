@@ -16,27 +16,28 @@ object MovePlanner {
     fun remaining(b: Board, sol: IntArray): List<Int> =
         (0 until b.n).map { b.idx(it, sol[it]) }.filter { b.state[it] != Cell.CAT }
 
-    fun catTaps(b: Board, cell: Int): List<Tap> {
+    fun catTaps(b: Board, cell: Int, current: Cell = b.state[cell]): List<Tap> {
         val x = b.cx(cell % b.n); val y = b.cy(cell / b.n)
-        return when (b.state[cell]) {
+        return when (current) {
             Cell.CAT -> emptyList()
             Cell.EMPTY -> listOf(Tap(x, y, true, GAP_MS))
             Cell.X -> listOf(Tap(x, y, false, CLEAR_PAUSE_MS), Tap(x, y, true, GAP_MS))
         }
     }
 
-    /** Empty cells ruled out by any cat: same row, column, colour, or touching. */
-    fun xTargets(b: Board): List<Int> {
-        val n = b.n
-        val out = LinkedHashSet<Int>()
-        for (cat in b.cats) {
-            val r = cat / n; val c = cat % n; val reg = b.region[cat]
-            for (i in 0 until n * n) {
-                if (b.state[i] != Cell.EMPTY) continue
-                val rr = i / n; val cc = i % n
-                if (rr == r || cc == c || b.region[i] == reg || (abs(rr - r) <= 1 && abs(cc - c) <= 1)) out += i
-            }
+    /** EMPTY cells (in [state]) ruled out by a cat at [cat]: same row, column, colour, or touching. */
+    fun xTargetsFor(b: Board, state: Array<Cell>, cat: Int): List<Int> {
+        val n = b.n; val r = cat / n; val c = cat % n; val reg = b.region[cat]
+        return (0 until n * n).filter { i ->
+            state[i] == Cell.EMPTY &&
+                (i / n == r || i % n == c || b.region[i] == reg || (abs(i / n - r) <= 1 && abs(i % n - c) <= 1))
         }
+    }
+
+    /** Empty cells ruled out by any cat on the board. */
+    fun xTargets(b: Board): List<Int> {
+        val out = LinkedHashSet<Int>()
+        for (cat in b.cats) out += xTargetsFor(b, b.state, cat)
         return out.toList()
     }
 

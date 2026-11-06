@@ -2,6 +2,7 @@ package com.ilan.meowsolver
 
 import com.ilan.meowsolver.core.Board
 import com.ilan.meowsolver.core.Cell
+import com.ilan.meowsolver.core.Tap
 
 /** "A B* C@" → region letter, `*` = X, `@` = cat. Cells are 100 px squares. */
 fun boardOf(vararg rows: String): Board {
@@ -28,3 +29,18 @@ val LEVEL81 = arrayOf(
     "A A A H H E E G",
     "A A A A H H E E",
 )
+
+/** Cell index a tap lands on. */
+fun Board.cellOf(t: Tap): Int =
+    idx((0 until n).first { t.y in rowT[it]..rowB[it] }, (0 until n).first { t.x in colL[it]..colR[it] })
+
+/** Applies taps with the game's rules: single EMPTY→X, X→EMPTY, CAT→EMPTY; double on EMPTY → CAT (otherwise no change). */
+fun Board.after(taps: List<Tap>): Board {
+    val st = state.copyOf()
+    for (t in taps) {
+        val i = cellOf(t)
+        st[i] = if (t.double) (if (st[i] == Cell.EMPTY) Cell.CAT else st[i])
+        else when (st[i]) { Cell.EMPTY -> Cell.X; Cell.X -> Cell.EMPTY; Cell.CAT -> Cell.EMPTY }
+    }
+    return Board(n, colL, colR, rowT, rowB, region, st)
+}

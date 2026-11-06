@@ -1,5 +1,6 @@
 package com.ilan.meowsolver
 
+import com.ilan.meowsolver.core.Cell
 import com.ilan.meowsolver.core.MovePlanner
 import com.ilan.meowsolver.core.Tap
 import org.junit.Assert.assertEquals
@@ -62,6 +63,26 @@ class MovePlannerTest {
     @Test fun xTapsAreSingleTaps() {
         val b = boardOf("A@ A", "B B")
         assertEquals(listOf(false, false, false), MovePlanner.xTaps(b).map { it.double })
+    }
+
+    @Test fun xTargetsForUsesGivenState() {
+        val b = boardOf(
+            "A A B B B",
+            "A A B B B",
+            "C C C@ D D",
+            "C E E D D",
+            "E E E D D",
+        )
+        val st = b.state.copyOf().also { it[6] = Cell.X; it[22] = Cell.X }
+        assertEquals(listOf(2, 7, 8, 10, 11, 13, 14, 15, 16, 17, 18), MovePlanner.xTargetsFor(b, st, 12))
+    }
+
+    @Test fun catTapsUseGivenCurrentState() {
+        val b = boardOf("A B", "C D")
+        assertEquals(
+            listOf(Tap(150, 50, false, MovePlanner.CLEAR_PAUSE_MS), Tap(150, 50, true, MovePlanner.GAP_MS)),
+            MovePlanner.catTaps(b, 1, Cell.X),
+        )
     }
 
     @Test fun strokeTimings() {
