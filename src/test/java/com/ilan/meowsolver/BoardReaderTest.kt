@@ -35,4 +35,11 @@ class BoardReaderTest {
     @Test(expected = BoardNotFound::class) fun blankScreenThrows() {
         BoardReader.read(IntArray(400 * 800) { 0xFFF7F1EE.toInt() }, 400, 800)
     }
+
+    @Test(expected = BoardNotFound::class) fun tooManyRowsThrows() {
+        val w = 400; val h = 1200
+        val px = IntArray(w * h) { 0xFFF7F1EE.toInt() }
+        for (i in 0 until 14) for (y in i * 80 + 10 until i * 80 + 70) for (x in 0 until w) px[y * w + x] = 0xFFC86432.toInt()
+        BoardReader.read(px, w, h)
+    }
 }

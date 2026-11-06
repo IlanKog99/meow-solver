@@ -36,7 +36,7 @@ object BoardReader {
             }
             if (len > bestLen) { bestLen = len; bestS = s }
         }
-        if (bestLen < 4) throw BoardNotFound("Board not found")
+        if (bestLen < 4 || bestLen > 12) throw BoardNotFound("Board not found") // >12: junk screen, would overflow Int masks
         val n = bestLen
         val rowT = IntArray(n) { runs[bestS + it][0] }
         val rowB = IntArray(n) { runs[bestS + it][1] }

@@ -9,17 +9,19 @@ import android.os.Handler
 import android.os.Looper
 import android.view.Display
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.WindowManager.LayoutParams as LP
 import android.view.accessibility.AccessibilityEvent
-import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.pointerInteropFilter
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.platform.ComposeView
 import com.ilan.meowsolver.core.Board
 import com.ilan.meowsolver.core.BoardNotFound
@@ -32,7 +34,9 @@ import com.ilan.meowsolver.ui.Marks
 import com.ilan.meowsolver.ui.MarksLayer
 import com.ilan.meowsolver.ui.PanelCard
 import com.ilan.meowsolver.ui.PanelState
-import kotlin.math.roundToInt
+import kotlin.math.hypot
+import kotlin.math.max
+import kotlin.math.min
 
 class OverlayService : AccessibilityService() {
     companion object {
@@ -48,12 +52,13 @@ class OverlayService : AccessibilityService() {
         private const val FLASH_MS = 2000L
         private const val HINT_MS = 5000L
         private const val NO_SOLUTION = "No solution — a placed cat is wrong"
+        private const val READ_FAIL = "Couldn't read the screen. Try again"
     }
 
     private enum class Mode { CARD, BUBBLE }
 
     private val handler = Handler(Looper.getMainLooper())
-    private val owner = OverlayOwner()
+    private var owner = OverlayOwner()
     private lateinit var wm: WindowManager
     private lateinit var prefs: SharedPreferences
     private lateinit var taps: TapRunner
@@ -66,13 +71,17 @@ class OverlayService : AccessibilityService() {
     private var marks by mutableStateOf(Marks())
     private var hintToken = 0
     private var flashToken = 0
+    private var session = 0 // bumped by close()/unbind: in-flight work from an older session is dropped
+    private var dragDownX = 0f; private var dragDownY = 0f
+    private var dragWinX = 0; private var dragWinY = 0
+    private var dragMoved = false
 
     override fun onServiceConnected() {
         wm = getSystemService(WindowManager::class.java)
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         taps = TapRunner(this, handler)
         panel = panel.copy(answerOn = prefs.getBoolean(K_ANSWER, false))
-        owner.start()
+        owner = OverlayOwner().also { it.start() }
         instance = this
         showOverlay()
     }
@@ -80,8 +89,17 @@ class OverlayService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {}
     override fun onInterrupt() {}
 
+    override fun onDestroy() {
+        instance = null
+        session++
+        removeViews()
+        owner.stop()
+        super.onDestroy()
+    }
+
     override fun onUnbind(intent: Intent?): Boolean {
         instance = null
+        session++
         removeViews()
         owner.stop()
         return super.onUnbind(intent)
@@ -100,13 +118,15 @@ class OverlayService : AccessibilityService() {
         val d = resources.displayMetrics.density
         panelLp = LP(LP.WRAP_CONTENT, LP.WRAP_CONTENT, LP.TYPE_ACCESSIBILITY_OVERLAY, LP.FLAG_NOT_FOCUSABLE, PixelFormat.TRANSLUCENT).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = prefs.getInt(K_X, (12 * d).toInt())
-            y = prefs.getInt(K_Y, (80 * d).toInt())
+            val dm = resources.displayMetrics
+            x = prefs.getInt(K_X, (12 * d).toInt()).coerceIn(0, max(0, dm.widthPixels - (52 * d).toInt()))
+            y = prefs.getInt(K_Y, (80 * d).toInt()).coerceIn(0, max(0, dm.heightPixels - (52 * d).toInt()))
         }
         panelView = composeView { PanelHost() }.also { wm.addView(it, panelLp) }
     }
 
     private fun close() {
+        session++
         removeViews()
         marks = Marks()
         panel = panel.copy(status = "Ready", busy = false)
@@ -133,57 +153,75 @@ class OverlayService : AccessibilityService() {
         wm.updateViewLayout(view, panelLp)
     }
 
-    private fun movePanel(dx: Float, dy: Float) {
-        panelLp.x += dx.roundToInt(); panelLp.y += dy.roundToInt()
-        panelView?.let { wm.updateViewLayout(it, panelLp) }
+    /** Raw screen coordinates: the window moves under the finger, so local deltas would jitter. */
+    private fun dragTouch(e: MotionEvent, onClick: (() -> Unit)?): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> { dragDownX = e.rawX; dragDownY = e.rawY; dragWinX = panelLp.x; dragWinY = panelLp.y; dragMoved = false }
+            MotionEvent.ACTION_MOVE -> {
+                val dx = e.rawX - dragDownX; val dy = e.rawY - dragDownY
+                if (!dragMoved && hypot(dx, dy) > ViewConfiguration.get(this).scaledTouchSlop) dragMoved = true
+                val view = panelView
+                if (dragMoved && view != null) {
+                    panelLp.x = dragWinX + dx.toInt(); panelLp.y = dragWinY + dy.toInt()
+                    wm.updateViewLayout(view, panelLp)
+                }
+            }
+            MotionEvent.ACTION_UP -> if (dragMoved) endDrag() else onClick?.invoke()
+            MotionEvent.ACTION_CANCEL -> if (dragMoved) endDrag()
+        }
+        return true
     }
 
+    /** Keep on screen; the bubble also snaps to the nearest side edge. Saves the position. */
     private fun endDrag() {
         val view = panelView ?: return
-        if (mode == Mode.BUBBLE) { // snap to the nearest side edge
-            val sw = resources.displayMetrics.widthPixels
-            panelLp.x = if (panelLp.x + view.width / 2 < sw / 2) 0 else sw - view.width
-            wm.updateViewLayout(view, panelLp)
-        }
+        val dm = resources.displayMetrics
+        val maxX = max(0, dm.widthPixels - view.width); val maxY = max(0, dm.heightPixels - view.height)
+        panelLp.x = if (mode == Mode.BUBBLE) (if (panelLp.x + view.width / 2 < dm.widthPixels / 2) 0 else maxX) else min(max(panelLp.x, 0), maxX)
+        panelLp.y = min(max(panelLp.y, 0), maxY)
+        wm.updateViewLayout(view, panelLp)
         prefs.edit().putInt(K_X, panelLp.x).putInt(K_Y, panelLp.y).apply()
     }
 
+    /** Run endDrag once the new mode has been laid out. */
+    private fun settle() { handler.postDelayed({ endDrag() }, 120) }
+
+    @OptIn(ExperimentalComposeUiApi::class)
     @Composable
     private fun PanelHost() {
-        val drag = Modifier.pointerInput(Unit) {
-            detectDragGestures(onDragEnd = ::endDrag) { change, d -> change.consume(); movePanel(d.x, d.y) }
-        }
         when (mode) {
             Mode.CARD -> PanelCard(
                 panel, onScan = ::scan, onHint = ::hint, onCat = ::placeCat, onX = ::markX,
-                onAnswer = ::toggleAnswer, onMinimize = { mode = Mode.BUBBLE }, onClose = ::close, dragModifier = drag,
+                onAnswer = ::toggleAnswer, onMinimize = { mode = Mode.BUBBLE; settle() }, onClose = ::close,
+                dragModifier = Modifier.pointerInteropFilter { dragTouch(it, null) },
             )
-            Mode.BUBBLE -> Bubble(onClick = { mode = Mode.CARD }, modifier = drag)
+            Mode.BUBBLE -> Bubble(
+                onClick = {}, // click is detected by dragTouch (movement < touch slop)
+                modifier = Modifier.pointerInteropFilter { dragTouch(it) { mode = Mode.CARD; settle() } },
+            )
         }
     }
 
     // ---------- actions ----------
 
-    private fun scan() = withBoard { b ->
-        val sol = Solver.solve(b)
+    private fun scan() = withBoard { b, sol ->
         val token = ++flashToken
-        marks = marks.copy(board = b, flash = true,
-            rings = if (sol != null && panel.answerOn) MovePlanner.remaining(b, sol) else marks.rings)
+        marks = marks.copy(flash = true)
         handler.postDelayed({ if (token == flashToken) marks = marks.copy(flash = false) }, FLASH_MS)
         done("${b.n}×${b.n} · ${b.cats.size} cats · " + if (sol != null) "solvable" else "no solution")
     }
 
-    private fun hint() = withBoard { b ->
-        val sol = Solver.solve(b) ?: return@withBoard done(NO_SOLUTION)
+    private fun hint() = withBoard { b, sol ->
+        sol ?: return@withBoard done(NO_SOLUTION)
         val cell = MovePlanner.nextCat(b, sol) ?: return@withBoard done("Solved")
         val token = ++hintToken
-        marks = marks.copy(board = b, hint = cell)
+        marks = marks.copy(hint = cell)
         handler.postDelayed({ if (token == hintToken) marks = marks.copy(hint = null) }, HINT_MS)
         done("Next cat: row ${cell / b.n + 1}, col ${cell % b.n + 1}")
     }
 
-    private fun placeCat() = withBoard { b ->
-        val sol = Solver.solve(b) ?: return@withBoard done(NO_SOLUTION)
+    private fun placeCat() = withBoard { b, sol ->
+        sol ?: return@withBoard done(NO_SOLUTION)
         val cell = MovePlanner.nextCat(b, sol) ?: return@withBoard done("Solved")
         runTaps(MovePlanner.catTaps(b, cell)) {
             marks = marks.copy(rings = marks.rings - cell, hint = marks.hint.takeIf { it != cell })
@@ -191,7 +229,7 @@ class OverlayService : AccessibilityService() {
         }
     }
 
-    private fun markX() = withBoard { b ->
+    private fun markX() = withBoard(needSolution = false) { b, _ ->
         val t = MovePlanner.xTaps(b)
         if (t.isEmpty()) return@withBoard done("Nothing to mark")
         runTaps(t) { "Marked ${t.size} cells" }
@@ -203,9 +241,8 @@ class OverlayService : AccessibilityService() {
         prefs.edit().putBoolean(K_ANSWER, on).apply()
         panel = panel.copy(answerOn = on)
         if (!on) { marks = marks.copy(rings = emptyList()); return }
-        withBoard { b ->
-            val sol = Solver.solve(b) ?: return@withBoard done(NO_SOLUTION)
-            marks = marks.copy(board = b, rings = MovePlanner.remaining(b, sol))
+        withBoard { _, sol ->
+            sol ?: return@withBoard done(NO_SOLUTION)
             done(if (marks.rings.isEmpty()) "Solved" else "Showing ${marks.rings.size} cats")
         }
     }
@@ -215,39 +252,66 @@ class OverlayService : AccessibilityService() {
     private fun done(msg: String) { panel = panel.copy(status = msg, busy = false) }
 
     private fun runTaps(list: List<Tap>, success: () -> String) {
+        val s = session
         panel = panel.copy(status = "Working…")
         setPanelTouchable(false)
-        taps.run(list, prefs.getInt(K_DOUBLE_MS, MovePlanner.GAP_MS.toInt()).toLong()) { ok ->
+        taps.run(list, prefs.getInt(K_DOUBLE_MS, MovePlanner.GAP_MS.toInt()).toLong(), cancelled = { s != session }) { ok ->
+            if (s != session) return@run
             setPanelTouchable(true)
             done(if (ok) success() else "Stopped")
         }
     }
 
-    private fun withBoard(action: (Board) -> Unit) {
+    /** Hides the overlay, screenshots, reads the board and refreshes answer rings before running [action]. */
+    private fun withBoard(needSolution: Boolean = true, action: (Board, IntArray?) -> Unit) {
         if (panel.busy) return
         panel = panel.copy(busy = true)
         setOverlayVisible(false)
-        handler.postDelayed({ capture(retry = true, action) }, CAPTURE_DELAY_MS)
+        val s = session
+        handler.postDelayed({ if (s == session) capture(s, true, needSolution, action) }, CAPTURE_DELAY_MS)
     }
 
-    private fun capture(retry: Boolean, action: (Board) -> Unit) {
+    private fun handleBoard(b: Board, needSolution: Boolean, action: (Board, IntArray?) -> Unit) {
+        val sol = if (needSolution || panel.answerOn) Solver.solve(b) else null
+        marks = marks.copy(board = b,
+            rings = if (panel.answerOn) sol?.let { MovePlanner.remaining(b, it) } ?: emptyList() else marks.rings)
+        action(b, sol)
+    }
+
+    private fun capture(s: Int, retry: Boolean, needSolution: Boolean, action: (Board, IntArray?) -> Unit) {
         takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(res: ScreenshotResult) {
-                val hw = Bitmap.wrapHardwareBuffer(res.hardwareBuffer, res.colorSpace)
-                val bmp = hw?.copy(Bitmap.Config.ARGB_8888, false)
-                res.hardwareBuffer.close()
+                var px: IntArray? = null; var w = 0; var h = 0
+                try {
+                    val hw = Bitmap.wrapHardwareBuffer(res.hardwareBuffer, res.colorSpace)
+                    val bmp = hw?.copy(Bitmap.Config.ARGB_8888, false)
+                    hw?.recycle()
+                    if (bmp != null) {
+                        w = bmp.width; h = bmp.height
+                        px = IntArray(w * h).also { bmp.getPixels(it, 0, w, 0, 0, w, h) }
+                        bmp.recycle()
+                    }
+                } catch (_: Exception) {
+                } catch (_: OutOfMemoryError) {
+                } finally { res.hardwareBuffer.close() }
+                if (s != session) return
                 setOverlayVisible(true)
-                if (bmp == null) return done("Couldn't read the screen. Try again")
-                val w = bmp.width; val h = bmp.height
-                val px = IntArray(w * h).also { bmp.getPixels(it, 0, w, 0, 0, w, h) }
-                bmp.recycle()
-                val board = try { BoardReader.read(px, w, h) } catch (e: BoardNotFound) { return done("Open a Meowdoku puzzle first") }
-                action(board)
+                if (px == null) return done(READ_FAIL)
+                try {
+                    handleBoard(BoardReader.read(px, w, h), needSolution, action)
+                } catch (_: BoardNotFound) {
+                    done("Open a Meowdoku puzzle first")
+                } catch (_: Exception) {
+                    setPanelTouchable(true); done(READ_FAIL)
+                } catch (_: OutOfMemoryError) {
+                    setPanelTouchable(true); done(READ_FAIL)
+                }
             }
 
             override fun onFailure(errorCode: Int) {
-                if (retry) handler.postDelayed({ capture(false, action) }, RETRY_MS)
-                else { setOverlayVisible(true); done("Couldn't read the screen. Try again") }
+                if (s != session) return
+                if (retry) handler.postDelayed({ if (s == session) capture(s, false, needSolution, action) }, RETRY_MS)
+                else { setOverlayVisible(true); done(READ_FAIL) }
             }
         })
     }
