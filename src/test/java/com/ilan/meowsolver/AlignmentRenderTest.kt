@@ -22,12 +22,17 @@ class AlignmentRenderTest {
             val marks = Marks(b, MovePlanner.remaining(b, sol), MovePlanner.nextCat(b, sol), flash = true)
             val g = img.createGraphics()
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
-            g.color = Color.WHITE; g.stroke = BasicStroke(4f)
-            for (r in 0 until b.n) for (c in 0 until b.n) g.drawRect(b.colL[c], b.rowT[r], b.colR[c] - b.colL[c], b.rowB[r] - b.rowT[r])
+            for (r in 0 until b.n) for (c in 0 until b.n) {
+                val x = b.colL[c]; val y = b.rowT[r]; val w = b.colR[c] - b.colL[c]; val h = b.rowB[r] - b.rowT[r]
+                g.color = Color(0x2A, 0x24, 0x20, 204); g.stroke = BasicStroke(7f); g.drawRect(x, y, w, h)
+                g.color = Color.WHITE; g.stroke = BasicStroke(3f); g.drawRect(x, y, w, h)
+            }
             for (i in marks.rings) {
                 val rad = b.markRadius(i); val x = b.cx(i % b.n); val y = b.cy(i / b.n)
                 assertTrue("$name ring $i radius", rad * 2 < b.colR[i % b.n] - b.colL[i % b.n])
                 assertTrue("$name ring $i inside image", x - rad > 0 && x + rad < img.width && y - rad > 0 && y + rad < img.height)
+                g.color = Color.WHITE; g.stroke = BasicStroke(rad * 0.32f)
+                g.drawOval((x - rad).toInt(), (y - rad).toInt(), (2 * rad).toInt(), (2 * rad).toInt())
                 g.color = Color(0xD9, 0x77, 0x57); g.stroke = BasicStroke(rad * 0.2f)
                 g.drawOval((x - rad).toInt(), (y - rad).toInt(), (2 * rad).toInt(), (2 * rad).toInt())
             }
