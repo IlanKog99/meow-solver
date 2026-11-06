@@ -26,7 +26,7 @@ class OrderTest {
     @Test fun randomIsAPermutationAndIgnoresReverse() {
         val all = (0 until 8).map { it * 8 + sol81[it] }.toSet()
         assertEquals(all, cells(CatOrder.RANDOM, false).toSet())
-        assertEquals(8, cells(CatOrder.RANDOM, true).size)
+        assertEquals(cells(CatOrder.RANDOM, false), cells(CatOrder.RANDOM, true)) // same seed → same order
     }
 
     @Test fun skipsPlacedCats() {

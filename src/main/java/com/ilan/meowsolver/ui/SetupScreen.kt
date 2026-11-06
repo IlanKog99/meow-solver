@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
@@ -206,13 +208,17 @@ private fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> U
 @Composable
 private fun SwitchRow(title: String, detail: String?, checked: Boolean, enabled: Boolean = true, onChange: (Boolean) -> Unit) {
     val c = LocalSetupColors.current
-    Row(Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f), verticalAlignment = Alignment.CenterVertically) {
+    Row(
+        Modifier.fillMaxWidth().alpha(if (enabled) 1f else 0.45f)
+            .toggleable(checked, enabled, role = Role.Switch, onValueChange = onChange), // whole row tappable + TalkBack reads the title
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
         Column(Modifier.weight(1f)) {
             Text(title, color = c.ink, fontSize = 15.sp)
             if (detail != null) Text(detail, color = c.inkMuted, fontSize = 13.sp)
         }
         Switch(
-            checked = checked, onCheckedChange = onChange, enabled = enabled,
+            checked = checked, onCheckedChange = null, enabled = enabled,
             colors = SwitchDefaults.colors(
                 checkedThumbColor = Color.White, checkedTrackColor = Meow.Clay, checkedBorderColor = Meow.Clay,
                 uncheckedThumbColor = c.inkMuted, uncheckedTrackColor = c.ink.copy(alpha = 0.12f), uncheckedBorderColor = c.inkMuted,
