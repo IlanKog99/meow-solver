@@ -26,13 +26,11 @@ object MeowIcons {
         moveTo(11f, 15.5f); lineTo(12f, 16.5f); lineTo(13f, 15.5f)
     }
     val X = icon("x") { moveTo(6f, 6f); lineTo(18f, 18f); moveTo(18f, 6f); lineTo(6f, 18f) }
-    val Scan = icon("scan") {
-        moveTo(4f, 9f); lineTo(4f, 4f); lineTo(9f, 4f)
-        moveTo(15f, 4f); lineTo(20f, 4f); lineTo(20f, 9f)
-        moveTo(20f, 15f); lineTo(20f, 20f); lineTo(15f, 20f)
-        moveTo(9f, 20f); lineTo(4f, 20f); lineTo(4f, 15f)
-        moveTo(7f, 12f); lineTo(17f, 12f)
+    val FastForward = icon("fast-forward") {
+        moveTo(4f, 6f); lineTo(11f, 12f); lineTo(4f, 18f); close()
+        moveTo(12f, 6f); lineTo(19f, 12f); lineTo(12f, 18f); close()
     }
+    val Stop = icon("stop") { moveTo(7f, 7f); lineTo(17f, 7f); lineTo(17f, 17f); lineTo(7f, 17f); close() }
     val Bulb = icon("bulb") {
         moveTo(9f, 15f); curveTo(7f, 13.5f, 6f, 11.8f, 6f, 9.5f)
         arcTo(6f, 6f, 0f, false, true, 18f, 9.5f)

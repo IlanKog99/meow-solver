@@ -19,7 +19,7 @@ class AlignmentRenderTest {
             val img = Fixtures.image(name)
             val b = Fixtures.board(name)
             val sol = Solver.solve(b)!!
-            val marks = Marks(b, MovePlanner.remaining(b, sol), MovePlanner.nextCat(b, sol), flash = true)
+            val marks = Marks(b, MovePlanner.remaining(b, sol), MovePlanner.nextCat(b, sol))
             val g = img.createGraphics()
             g.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON)
             for (r in 0 until b.n) for (c in 0 until b.n) {

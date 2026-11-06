@@ -50,7 +50,7 @@ fun SetupScreen(
         }
         Text("Meow Solver", fontSize = 28.sp, fontWeight = FontWeight.Medium, color = Meow.Ink, modifier = Modifier.padding(top = 16.dp))
         Text(
-            "Scan, hint, and place cats in Meowdoku from a floating panel.",
+            "Hint, place, or solve Meowdoku from a floating panel.",
             fontSize = 15.sp, color = Meow.InkMuted, modifier = Modifier.padding(top = 4.dp),
         )
         Button(
@@ -68,11 +68,11 @@ fun SetupScreen(
 
         SectionTitle("How it works")
         Card {
-            HowRow(MeowIcons.Scan, "Scan", "Reads the board and checks it's solvable")
+            HowRow(MeowIcons.Eye, "Reveal", "Rings every remaining cat. Tap again to hide.")
             HowRow(MeowIcons.Bulb, "Hint", "Shows the next cat for 5 seconds")
             HowRow(MeowIcons.Cat, "Cat", "Places the next cat for you")
             HowRow(MeowIcons.X, "X", "Marks every cell a cat rules out")
-            HowRow(MeowIcons.Eye, "Answer", "Toggles rings on all remaining cats")
+            HowRow(MeowIcons.FastForward, "Answer", "Solves the level. Tap Stop to halt.")
         }
 
         SectionTitle("Tuning")

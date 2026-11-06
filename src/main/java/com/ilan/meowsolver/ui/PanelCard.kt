@@ -26,12 +26,12 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-data class PanelState(val status: String, val busy: Boolean, val answerOn: Boolean)
+data class PanelState(val status: String, val busy: Boolean, val revealOn: Boolean, val autoRunning: Boolean = false)
 
 @Composable
 fun PanelCard(
     state: PanelState,
-    onScan: () -> Unit, onHint: () -> Unit, onCat: () -> Unit, onX: () -> Unit, onAnswer: () -> Unit,
+    onReveal: () -> Unit, onHint: () -> Unit, onCat: () -> Unit, onX: () -> Unit, onAnswer: () -> Unit,
     onMinimize: () -> Unit, onClose: () -> Unit,
     dragModifier: Modifier = Modifier,
 ) {
@@ -48,11 +48,12 @@ fun PanelCard(
         }
         Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 2.dp), horizontalArrangement = Arrangement.SpaceBetween) {
             val on = !state.busy
-            ActionButton(MeowIcons.Scan, "Scan", on, onClick = onScan)
+            ActionButton(MeowIcons.Eye, "Reveal", on, toggled = state.revealOn, onClick = onReveal)
             ActionButton(MeowIcons.Bulb, "Hint", on, onClick = onHint)
             ActionButton(MeowIcons.Cat, "Cat", on, filled = true, onClick = onCat)
             ActionButton(MeowIcons.X, "X", on, onClick = onX)
-            ActionButton(MeowIcons.Eye, "Answer", on, toggled = state.answerOn, onClick = onAnswer)
+            if (state.autoRunning) ActionButton(MeowIcons.Stop, "Stop", true, toggled = true, onClick = onAnswer)
+            else ActionButton(MeowIcons.FastForward, "Answer", on, onClick = onAnswer)
         }
     }
 }

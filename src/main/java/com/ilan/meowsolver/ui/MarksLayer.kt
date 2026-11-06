@@ -30,7 +30,6 @@ data class Marks(
     val board: Board? = null,
     val rings: List<Int> = emptyList(),
     val hint: Int? = null,
-    val flash: Boolean = false,
 )
 
 @Composable
@@ -40,12 +39,6 @@ fun MarksLayer(marks: Marks) {
     Box(Modifier.fillMaxSize()) {
         Canvas(Modifier.fillMaxSize().onGloballyPositioned { origin = it.positionOnScreen() }) {
             fun center(i: Int) = Offset(b.cx(i % b.n) - origin.x, b.cy(i / b.n) - origin.y)
-            if (marks.flash) for (r in 0 until b.n) for (c in 0 until b.n) {
-                val off = Offset(b.colL[c] - origin.x, b.rowT[r] - origin.y)
-                val sz = Size((b.colR[c] - b.colL[c]).toFloat(), (b.rowB[r] - b.rowT[r]).toFloat())
-                drawRect(Color(0xCC2A2420), off, sz, style = Stroke(7f))
-                drawRect(Color.White, off, sz, style = Stroke(3f))
-            }
             for (i in marks.rings) {
                 val rad = b.markRadius(i)
                 drawCircle(Color.White, rad, center(i), style = Stroke(rad * 0.32f))

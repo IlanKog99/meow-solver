@@ -26,9 +26,10 @@ class UiSnapshotTest {
 
     @Composable private fun Panel(s: PanelState) = PanelCard(s, {}, {}, {}, {}, {}, {}, {})
 
-    @Test fun panelIdle() = paparazzi.snapshot { OnGame { Panel(PanelState("10×10 · 3 cats · solvable", busy = false, answerOn = false)) } }
-    @Test fun panelBusy() = paparazzi.snapshot { OnGame { Panel(PanelState("Working…", busy = true, answerOn = false)) } }
-    @Test fun panelAnswerOn() = paparazzi.snapshot { OnGame { Panel(PanelState("Showing 7 cats", busy = false, answerOn = true)) } }
+    @Test fun panelIdle() = paparazzi.snapshot { OnGame { Panel(PanelState("Ready", busy = false, revealOn = false)) } }
+    @Test fun panelBusy() = paparazzi.snapshot { OnGame { Panel(PanelState("Working…", busy = true, revealOn = false)) } }
+    @Test fun panelRevealOn() = paparazzi.snapshot { OnGame { Panel(PanelState("Showing 7 cats", busy = false, revealOn = true)) } }
+    @Test fun panelRunning() = paparazzi.snapshot { OnGame { Panel(PanelState("Placing cats… 3/10", busy = true, revealOn = false, autoRunning = true)) } }
     @Test fun bubble() = paparazzi.snapshot { OnGame { Bubble(onClick = {}) } }
     @Test fun setupOff() { tall(); paparazzi.snapshot { SetupScreen(SetupState(serviceOn = false, doubleTapMs = 90), {}, {}, {}, {}) } }
     @Test fun setupOn() { tall(); paparazzi.snapshot { SetupScreen(SetupState(serviceOn = true, doubleTapMs = 120), {}, {}, {}, {}) } }

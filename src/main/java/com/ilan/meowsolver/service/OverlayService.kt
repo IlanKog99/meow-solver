@@ -5,6 +5,7 @@ import android.content.Intent
 import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.PixelFormat
+import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
 import android.view.Display
@@ -23,9 +24,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInteropFilter
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.platform.ComposeView
+import com.ilan.meowsolver.core.AutoSolver
 import com.ilan.meowsolver.core.Board
 import com.ilan.meowsolver.core.BoardNotFound
 import com.ilan.meowsolver.core.BoardReader
+import com.ilan.meowsolver.core.Check
 import com.ilan.meowsolver.core.MovePlanner
 import com.ilan.meowsolver.core.Solver
 import com.ilan.meowsolver.core.Tap
@@ -43,15 +46,17 @@ class OverlayService : AccessibilityService() {
         var instance: OverlayService? = null
             private set
         const val PREFS = "meow"
-        const val K_ANSWER = "answerOn"
+        const val K_REVEAL = "revealOn"
         const val K_DOUBLE_MS = "doubleTapMs"
         private const val K_X = "panelX"
         private const val K_Y = "panelY"
         private const val CAPTURE_DELAY_MS = 150L
         private const val RETRY_MS = 400L
         private const val THROTTLE_RETRY_MS = 1000L // takeScreenshot is rate-limited to ~1/s
-        private const val FLASH_MS = 2000L
         private const val HINT_MS = 5000L
+        private const val AUTO_SETTLE_MS = 400L // let the game animate before re-reading
+        private const val MAX_FIX_ROUNDS = 3
+        private const val FIX_FAIL = "Couldn't place all cats — tap Answer again"
         private const val NO_SOLUTION = "No solution — a placed cat is wrong"
         private const val READ_FAIL = "Couldn't read the screen. Try again"
     }
@@ -68,10 +73,9 @@ class OverlayService : AccessibilityService() {
     private var marksView: ComposeView? = null
 
     private var mode by mutableStateOf(Mode.CARD)
-    private var panel by mutableStateOf(PanelState("Ready", busy = false, answerOn = false))
+    private var panel by mutableStateOf(PanelState("Ready", busy = false, revealOn = false))
     private var marks by mutableStateOf(Marks())
     private var hintToken = 0
-    private var flashToken = 0
     private var session = 0 // bumped by close()/unbind: in-flight work from an older session is dropped
     private var dragDownX = 0f; private var dragDownY = 0f
     private var dragWinX = 0; private var dragWinY = 0
@@ -81,7 +85,7 @@ class OverlayService : AccessibilityService() {
         wm = getSystemService(WindowManager::class.java)
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         taps = TapRunner(this, handler)
-        panel = panel.copy(answerOn = prefs.getBoolean(K_ANSWER, false))
+        panel = panel.copy(revealOn = prefs.getBoolean(K_REVEAL, false))
         owner = OverlayOwner().also { it.start() }
         instance = this
         showOverlay()
@@ -131,7 +135,7 @@ class OverlayService : AccessibilityService() {
         session++
         removeViews()
         marks = Marks()
-        panel = panel.copy(status = "Ready", busy = false)
+        panel = panel.copy(status = "Ready", busy = false, autoRunning = false)
     }
 
     private fun removeViews() {
@@ -202,8 +206,8 @@ class OverlayService : AccessibilityService() {
     private fun PanelHost() {
         when (mode) {
             Mode.CARD -> PanelCard(
-                panel, onScan = ::scan, onHint = ::hint, onCat = ::placeCat, onX = ::markX,
-                onAnswer = ::toggleAnswer, onMinimize = { mode = Mode.BUBBLE; settle() }, onClose = ::close,
+                panel, onReveal = ::toggleReveal, onHint = ::hint, onCat = ::placeCat, onX = ::markX,
+                onAnswer = ::answer, onMinimize = { mode = Mode.BUBBLE; settle() }, onClose = ::close,
                 dragModifier = Modifier.pointerInteropFilter { dragTouch(it, null) }, // applied to the status text only
             )
             Mode.BUBBLE -> Bubble(
@@ -214,13 +218,6 @@ class OverlayService : AccessibilityService() {
     }
 
     // ---------- actions ----------
-
-    private fun scan() = withBoard { b, sol ->
-        val token = ++flashToken
-        marks = marks.copy(flash = true)
-        handler.postDelayed({ if (token == flashToken) marks = marks.copy(flash = false) }, FLASH_MS)
-        done("${b.n}×${b.n} · ${b.cats.size} cats · " + if (sol != null) "solvable" else "no solution")
-    }
 
     private fun hint() = withBoard { b, sol ->
         sol ?: return@withBoard done(NO_SOLUTION)
@@ -246,11 +243,11 @@ class OverlayService : AccessibilityService() {
         runTaps(t) { "Marked ${t.size} cells" }
     }
 
-    private fun toggleAnswer() {
+    private fun toggleReveal() {
         if (panel.busy) return
-        val on = !panel.answerOn
-        prefs.edit().putBoolean(K_ANSWER, on).apply()
-        panel = panel.copy(answerOn = on)
+        val on = !panel.revealOn
+        prefs.edit().putBoolean(K_REVEAL, on).apply()
+        panel = panel.copy(revealOn = on)
         if (!on) { marks = marks.copy(rings = emptyList()); return }
         withBoard { _, sol ->
             sol ?: return@withBoard done(NO_SOLUTION)
@@ -258,9 +255,61 @@ class OverlayService : AccessibilityService() {
         }
     }
 
+    // ---------- auto-Answer ----------
+
+    private fun answer() {
+        if (panel.autoRunning) { stopAnswer(); return }
+        if (panel.busy) return
+        panel = panel.copy(busy = true, autoRunning = true)
+        answerStep(fixes = 0, first = true)
+    }
+
+    private fun stopAnswer() {
+        session++ // drops the in-flight capture, settle wait, and remaining taps
+        setPanelTouchable(true)
+        setOverlayVisible(true)
+        done("Stopped")
+    }
+
+    /** One read → check → act round. First round plans everything but the last cat; later rounds fix or finish. */
+    private fun answerStep(fixes: Int, first: Boolean): Unit = withBoard(internal = true) { b, sol ->
+        panel = panel.copy(status = "Placing cats… ${b.cats.size}/${b.n}")
+        when (val c = AutoSolver.check(b, sol)) {
+            Check.Solved -> done("Solved")
+            Check.NoSolution -> done(NO_SOLUTION)
+            is Check.LastOnly -> autoTaps(AutoSolver.lastCatTaps(b, c.cell)) { done("Solved") }
+            is Check.Missing ->
+                if (!first && fixes >= MAX_FIX_ROUNDS) done(FIX_FAIL)
+                else autoTaps(AutoSolver.plan(b, sol!!)) {
+                    val s = session
+                    handler.postDelayed({
+                        if (s == session) answerStep(if (first) 0 else fixes + 1, first = false)
+                    }, AUTO_SETTLE_MS)
+                }
+        }
+    }
+
+    /** Runs taps without ending the busy state; Stop stays tappable unless a tap would land on the panel. */
+    private fun autoTaps(list: List<Tap>, next: () -> Unit) {
+        val s = session
+        setPanelTouchable(!tapsHitPanel(list))
+        taps.run(list, prefs.getInt(K_DOUBLE_MS, MovePlanner.GAP_MS.toInt()).toLong(), cancelled = { s != session }) { ok ->
+            if (s != session) return@run
+            setPanelTouchable(true)
+            if (!ok) done("Stopped") else try { next() } catch (_: Exception) { done(READ_FAIL) }
+        }
+    }
+
+    private fun tapsHitPanel(list: List<Tap>): Boolean {
+        val v = panelView ?: return false
+        val loc = IntArray(2).also { v.getLocationOnScreen(it) }
+        val r = Rect(loc[0] - 8, loc[1] - 8, loc[0] + v.width + 8, loc[1] + v.height + 8)
+        return list.any { r.contains(it.x, it.y) }
+    }
+
     // ---------- plumbing ----------
 
-    private fun done(msg: String) { panel = panel.copy(status = msg, busy = false) }
+    private fun done(msg: String) { panel = panel.copy(status = msg, busy = false, autoRunning = false) }
 
     private fun runTaps(list: List<Tap>, success: () -> String) {
         val s = session
@@ -274,8 +323,8 @@ class OverlayService : AccessibilityService() {
     }
 
     /** Hides the overlay, screenshots, reads the board and refreshes answer rings before running [action]. */
-    private fun withBoard(needSolution: Boolean = true, action: (Board, IntArray?) -> Unit) {
-        if (panel.busy) return
+    private fun withBoard(needSolution: Boolean = true, internal: Boolean = false, action: (Board, IntArray?) -> Unit) {
+        if (panel.busy && !internal) return
         panel = panel.copy(busy = true)
         setOverlayVisible(false)
         val s = session
@@ -283,9 +332,9 @@ class OverlayService : AccessibilityService() {
     }
 
     private fun handleBoard(b: Board, needSolution: Boolean, action: (Board, IntArray?) -> Unit) {
-        val sol = if (needSolution || panel.answerOn) Solver.solve(b) else null
+        val sol = if (needSolution || panel.revealOn) Solver.solve(b) else null
         marks = marks.copy(board = b,
-            rings = if (panel.answerOn) sol?.let { MovePlanner.remaining(b, it) } ?: emptyList() else marks.rings)
+            rings = if (panel.revealOn) sol?.let { MovePlanner.remaining(b, it) } ?: emptyList() else marks.rings)
         action(b, sol)
     }
 
