@@ -45,10 +45,11 @@ class AutoSolverTest {
             val b = Fixtures.board(e.name)
             val sol = Solver.solve(b)!!
             val plan = AutoSolver.plan(b, sol)
+            val solCells = sol.mapIndexed { r, c -> r * b.n + c }.toSet()
             val byCell = plan.groupBy { b.cellOf(it) }
             for ((cell, taps) in byCell) {
-                val ok = taps.size == 1 ||
-                    (taps.size == 2 && !taps[0].double && taps[1].double && b.state[cell] == Cell.X)
+                val ok = (taps.size == 1 && b.state[cell] == Cell.EMPTY && (taps[0].double == (cell in solCells))) ||
+                    (taps.size == 2 && !taps[0].double && taps[1].double && b.state[cell] == Cell.X && cell in solCells)
                 assertTrue("${e.name}: cell $cell tapped $taps", ok)
             }
             MovePlanner.remaining(b, sol).lastOrNull()?.let { last ->
@@ -91,5 +92,26 @@ class AutoSolverTest {
         val sol = Solver.solve(b)!!
         assertEquals(emptyList<Any>(), AutoSolver.plan(b, sol))
         assertEquals(Check.LastOnly(7 * 8 + 0), AutoSolver.check(b, sol))
+    }
+
+    @Test fun xOnSolutionCellIsClearedThenCatted() {
+        val rows = LEVEL81.copyOf(); rows[0] = "A A B B B C* C C" // X sits on row 0's solution cell (col 5)
+        val b = boardOf(*rows)
+        val sol = Solver.solve(b)!!
+        val taps = AutoSolver.plan(b, sol).filter { b.cellOf(it) == 5 }
+        assertEquals(listOf(false, true), taps.map { it.double })
+        val done = b.after(AutoSolver.plan(b, sol))
+        assertEquals(Check.LastOnly(7 * 8 + 0), AutoSolver.check(done, Solver.solve(done)))
+    }
+
+    @Test fun catDoubleTapIsIsolatedByPauses() {
+        val b = Fixtures.board("hi_211922.jpg")
+        val plan = AutoSolver.plan(b, Solver.solve(b)!!)
+        plan.forEachIndexed { i, t ->
+            if (t.double) {
+                assertEquals("pause after cat $i", MovePlanner.CLEAR_PAUSE_MS, t.pauseAfterMs)
+                if (i > 0) assertEquals("pause before cat $i", MovePlanner.CLEAR_PAUSE_MS, plan[i - 1].pauseAfterMs)
+            }
+        }
     }
 }

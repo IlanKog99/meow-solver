@@ -8,6 +8,7 @@ import android.graphics.PixelFormat
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.view.Display
 import android.view.Gravity
 import android.view.MotionEvent
@@ -55,6 +56,7 @@ class OverlayService : AccessibilityService() {
         private const val THROTTLE_RETRY_MS = 1000L // takeScreenshot is rate-limited to ~1/s
         private const val HINT_MS = 5000L
         private const val AUTO_SETTLE_MS = 400L // let the game animate before re-reading
+        private const val STOP_GUARD_MS = 600L
         private const val MAX_FIX_ROUNDS = 3
         private const val FIX_FAIL = "Couldn't place all cats — tap Answer again"
         private const val NO_SOLUTION = "No solution — a placed cat is wrong"
@@ -76,6 +78,7 @@ class OverlayService : AccessibilityService() {
     private var panel by mutableStateOf(PanelState("Ready", busy = false, revealOn = false))
     private var marks by mutableStateOf(Marks())
     private var hintToken = 0
+    private var stoppedAt = 0L // a finger-down cancels in-flight gestures; ignore the Stop tap's own click after that
     private var session = 0 // bumped by close()/unbind: in-flight work from an older session is dropped
     private var dragDownX = 0f; private var dragDownY = 0f
     private var dragWinX = 0; private var dragWinY = 0
@@ -260,7 +263,7 @@ class OverlayService : AccessibilityService() {
 
     private fun answer() {
         if (panel.autoRunning) { stopAnswer(); return }
-        if (panel.busy) return
+        if (panel.busy || SystemClock.uptimeMillis() - stoppedAt < STOP_GUARD_MS) return
         panel = panel.copy(busy = true, autoRunning = true, status = "Placing cats…")
         answerStep(fixes = 0, first = true)
     }
@@ -300,7 +303,7 @@ class OverlayService : AccessibilityService() {
         taps.run(list, prefs.getInt(K_DOUBLE_MS, MovePlanner.GAP_MS.toInt()).toLong(), cancelled = { s != session }) { ok ->
             if (s != session) return@run
             setPanelTouchable(true)
-            if (!ok) done("Stopped") else try { next() } catch (_: Exception) { done(READ_FAIL) }
+            if (!ok) { stoppedAt = SystemClock.uptimeMillis(); done("Stopped") } else try { next() } catch (_: Exception) { done(READ_FAIL) }
         }
     }
 
@@ -366,7 +369,7 @@ class OverlayService : AccessibilityService() {
                     handleBoard(BoardReader.read(px, w, h), needSolution, action)
                 } catch (_: BoardNotFound) {
                     marks = Marks()
-                    done("Open a Meowdoku puzzle first")
+                    done(if (panel.autoRunning) "Stopped — board not found" else "Open a Meowdoku puzzle first")
                 } catch (_: Exception) {
                     setPanelTouchable(true); done(READ_FAIL)
                 } catch (_: OutOfMemoryError) {
