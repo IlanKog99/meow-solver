@@ -37,9 +37,16 @@ class BoardReaderTest {
     }
 
     @Test(expected = BoardNotFound::class) fun tooManyRowsThrows() {
-        val w = 400; val h = 1200
+        // 14x14 grid of square cells, white gaps, distinct saturated colours: only the n > 12 guard can reject it
+        val n = 14; val cell = 40; val gap = 6; val pad = 20
+        val w = pad * 2 + n * cell + (n - 1) * gap; val h = w
         val px = IntArray(w * h) { 0xFFF7F1EE.toInt() }
-        for (i in 0 until 14) for (y in i * 80 + 10 until i * 80 + 70) for (x in 0 until w) px[y * w + x] = 0xFFC86432.toInt()
+        val colors = IntArray(n) { java.awt.Color.HSBtoRGB(it / n.toFloat(), 1f, 1f) } // 14 hues, > 30 apart in RGB
+        for (row in 0 until n) for (col in 0 until n) {
+            val c = colors[(row * 5 + col * 3) % n]
+            val x0 = pad + col * (cell + gap); val y0 = pad + row * (cell + gap)
+            for (y in y0 until y0 + cell) for (x in x0 until x0 + cell) px[y * w + x] = c
+        }
         BoardReader.read(px, w, h)
     }
 }

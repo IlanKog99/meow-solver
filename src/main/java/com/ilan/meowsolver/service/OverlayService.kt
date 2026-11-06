@@ -123,6 +123,7 @@ class OverlayService : AccessibilityService() {
             y = prefs.getInt(K_Y, (80 * d).toInt()).coerceIn(0, max(0, dm.heightPixels - (52 * d).toInt()))
         }
         panelView = composeView { PanelHost() }.also { wm.addView(it, panelLp) }
+        settle() // re-clamp with the real card width once laid out
     }
 
     private fun close() {
@@ -184,7 +185,16 @@ class OverlayService : AccessibilityService() {
     }
 
     /** Run endDrag once the new mode has been laid out. */
-    private fun settle() { handler.postDelayed({ endDrag() }, 120) }
+    private fun settle() {
+        val view = panelView ?: return
+        view.addOnLayoutChangeListener(object : View.OnLayoutChangeListener {
+            override fun onLayoutChange(v: View, l: Int, t: Int, r: Int, b: Int, ol: Int, ot: Int, or: Int, ob: Int) {
+                if (r - l <= 0) return
+                v.removeOnLayoutChangeListener(this)
+                v.post { if (v === panelView) endDrag() }
+            }
+        })
+    }
 
     @OptIn(ExperimentalComposeUiApi::class)
     @Composable
@@ -193,10 +203,10 @@ class OverlayService : AccessibilityService() {
             Mode.CARD -> PanelCard(
                 panel, onScan = ::scan, onHint = ::hint, onCat = ::placeCat, onX = ::markX,
                 onAnswer = ::toggleAnswer, onMinimize = { mode = Mode.BUBBLE; settle() }, onClose = ::close,
-                dragModifier = Modifier.pointerInteropFilter { dragTouch(it, null) },
+                dragModifier = Modifier.pointerInteropFilter { dragTouch(it, null) }, // applied to the status text only
             )
             Mode.BUBBLE -> Bubble(
-                onClick = {}, // click is detected by dragTouch (movement < touch slop)
+                onClick = { mode = Mode.CARD; settle() }, // touch taps are consumed by dragTouch; this serves TalkBack
                 modifier = Modifier.pointerInteropFilter { dragTouch(it) { mode = Mode.CARD; settle() } },
             )
         }
@@ -258,7 +268,7 @@ class OverlayService : AccessibilityService() {
         taps.run(list, prefs.getInt(K_DOUBLE_MS, MovePlanner.GAP_MS.toInt()).toLong(), cancelled = { s != session }) { ok ->
             if (s != session) return@run
             setPanelTouchable(true)
-            done(if (ok) success() else "Stopped")
+            done(if (!ok) "Stopped" else try { success() } catch (_: Exception) { READ_FAIL })
         }
     }
 
@@ -279,7 +289,7 @@ class OverlayService : AccessibilityService() {
     }
 
     private fun capture(s: Int, retry: Boolean, needSolution: Boolean, action: (Board, IntArray?) -> Unit) {
-        takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
+        try { takeScreenshot(Display.DEFAULT_DISPLAY, mainExecutor, object : TakeScreenshotCallback {
             override fun onSuccess(res: ScreenshotResult) {
                 var px: IntArray? = null; var w = 0; var h = 0
                 try {
@@ -313,6 +323,8 @@ class OverlayService : AccessibilityService() {
                 if (retry) handler.postDelayed({ if (s == session) capture(s, false, needSolution, action) }, RETRY_MS)
                 else { setOverlayVisible(true); done(READ_FAIL) }
             }
-        })
+        }) } catch (_: Exception) {
+            if (s == session) { setOverlayVisible(true); setPanelTouchable(true); done(READ_FAIL) }
+        }
     }
 }

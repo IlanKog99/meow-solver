@@ -17,6 +17,6 @@ class OverlayOwner : LifecycleOwner, SavedStateRegistryOwner {
     override val savedStateRegistry: SavedStateRegistry get() = saved.savedStateRegistry
 
     fun start() { saved.performRestore(null); registry.currentState = Lifecycle.State.RESUMED }
-    fun stop() { registry.currentState = Lifecycle.State.DESTROYED }
+    fun stop() { if (registry.currentState.isAtLeast(Lifecycle.State.CREATED)) registry.currentState = Lifecycle.State.DESTROYED }
     fun attach(v: View) { v.setViewTreeLifecycleOwner(this); v.setViewTreeSavedStateRegistryOwner(this) }
 }

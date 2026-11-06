@@ -38,10 +38,10 @@ fun PanelCard(
     Column(
         Modifier.width(300.dp).background(Meow.Card, RoundedCornerShape(16.dp)).padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
-        Row(dragModifier.fillMaxWidth().height(36.dp), verticalAlignment = Alignment.CenterVertically) {
+        Row(Modifier.fillMaxWidth().height(36.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 state.status, color = Meow.OnCardMuted, fontSize = 13.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f).padding(start = 6.dp),
+                modifier = Modifier.weight(1f).then(dragModifier).padding(start = 6.dp),
             )
             HeaderIcon(MeowIcons.Minus, "Minimize", onMinimize)
             HeaderIcon(MeowIcons.Power, "Close", onClose)

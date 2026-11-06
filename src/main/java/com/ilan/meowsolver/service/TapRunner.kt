@@ -15,15 +15,17 @@ class TapRunner(private val svc: AccessibilityService, private val handler: Hand
     private fun step(taps: List<Tap>, i: Int, gap: Long, cancelled: () -> Boolean, onDone: (Boolean) -> Unit) {
         if (cancelled()) { onDone(false); return }
         if (i == taps.size) { onDone(true); return }
-        val t = taps[i]
-        val path = Path().apply { moveTo(t.x.toFloat(), t.y.toFloat()) }
-        val g = GestureDescription.Builder().apply {
-            for (s in MovePlanner.strokes(t, gap)) addStroke(GestureDescription.StrokeDescription(path, s[0], s[1]))
-        }.build()
-        val ok = svc.dispatchGesture(g, object : AccessibilityService.GestureResultCallback() {
-            override fun onCompleted(d: GestureDescription) { handler.postDelayed({ step(taps, i + 1, gap, cancelled, onDone) }, t.pauseAfterMs) }
-            override fun onCancelled(d: GestureDescription) = onDone(false)
-        }, null)
-        if (!ok) onDone(false)
+        try {
+            val t = taps[i]
+            val path = Path().apply { moveTo(t.x.toFloat(), t.y.toFloat()) }
+            val g = GestureDescription.Builder().apply {
+                for (s in MovePlanner.strokes(t, gap)) addStroke(GestureDescription.StrokeDescription(path, s[0], s[1]))
+            }.build()
+            val ok = svc.dispatchGesture(g, object : AccessibilityService.GestureResultCallback() {
+                override fun onCompleted(d: GestureDescription) { handler.postDelayed({ step(taps, i + 1, gap, cancelled, onDone) }, t.pauseAfterMs) }
+                override fun onCancelled(d: GestureDescription) = onDone(false)
+            }, null)
+            if (!ok) onDone(false)
+        } catch (_: Exception) { onDone(false) }
     }
 }
