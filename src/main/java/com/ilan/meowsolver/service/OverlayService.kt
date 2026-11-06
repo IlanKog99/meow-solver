@@ -46,7 +46,7 @@ class OverlayService : AccessibilityService() {
         var instance: OverlayService? = null
             private set
         const val PREFS = "meow"
-        const val K_REVEAL = "revealOn"
+        const val K_REVEAL = "answerOn"
         const val K_DOUBLE_MS = "doubleTapMs"
         private const val K_X = "panelX"
         private const val K_Y = "panelY"
@@ -164,6 +164,7 @@ class OverlayService : AccessibilityService() {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> { dragDownX = e.rawX; dragDownY = e.rawY; dragWinX = panelLp.x; dragWinY = panelLp.y; dragMoved = false }
             MotionEvent.ACTION_MOVE -> {
+                if (panel.autoRunning) return true // panel must not move under injected taps
                 val dx = e.rawX - dragDownX; val dy = e.rawY - dragDownY
                 if (!dragMoved && hypot(dx, dy) > ViewConfiguration.get(this).scaledTouchSlop) dragMoved = true
                 val view = panelView
@@ -207,12 +208,12 @@ class OverlayService : AccessibilityService() {
         when (mode) {
             Mode.CARD -> PanelCard(
                 panel, onReveal = ::toggleReveal, onHint = ::hint, onCat = ::placeCat, onX = ::markX,
-                onAnswer = ::answer, onMinimize = { mode = Mode.BUBBLE; settle() }, onClose = ::close,
+                onAnswer = ::answer, onMinimize = { if (!panel.autoRunning) { mode = Mode.BUBBLE; settle() } }, onClose = ::close,
                 dragModifier = Modifier.pointerInteropFilter { dragTouch(it, null) }, // applied to the status text only
             )
             Mode.BUBBLE -> Bubble(
-                onClick = { mode = Mode.CARD; settle() }, // touch taps are consumed by dragTouch; this serves TalkBack
-                modifier = Modifier.pointerInteropFilter { dragTouch(it) { mode = Mode.CARD; settle() } },
+                onClick = { if (!panel.autoRunning) { mode = Mode.CARD; settle() } }, // touch taps are consumed by dragTouch; this serves TalkBack
+                modifier = Modifier.pointerInteropFilter { dragTouch(it) { if (!panel.autoRunning) { mode = Mode.CARD; settle() } } },
             )
         }
     }
@@ -260,7 +261,7 @@ class OverlayService : AccessibilityService() {
     private fun answer() {
         if (panel.autoRunning) { stopAnswer(); return }
         if (panel.busy) return
-        panel = panel.copy(busy = true, autoRunning = true)
+        panel = panel.copy(busy = true, autoRunning = true, status = "Placing cats…")
         answerStep(fixes = 0, first = true)
     }
 
@@ -277,7 +278,10 @@ class OverlayService : AccessibilityService() {
         when (val c = AutoSolver.check(b, sol)) {
             Check.Solved -> done("Solved")
             Check.NoSolution -> done(NO_SOLUTION)
-            is Check.LastOnly -> autoTaps(AutoSolver.lastCatTaps(b, c.cell)) { done("Solved") }
+            is Check.LastOnly -> autoTaps(AutoSolver.lastCatTaps(b, c.cell)) {
+                marks = marks.copy(rings = marks.rings - c.cell, hint = marks.hint.takeIf { it != c.cell })
+                done("Solved")
+            }
             is Check.Missing ->
                 if (!first && fixes >= MAX_FIX_ROUNDS) done(FIX_FAIL)
                 else autoTaps(AutoSolver.plan(b, sol!!)) {
@@ -303,7 +307,8 @@ class OverlayService : AccessibilityService() {
     private fun tapsHitPanel(list: List<Tap>): Boolean {
         val v = panelView ?: return false
         val loc = IntArray(2).also { v.getLocationOnScreen(it) }
-        val r = Rect(loc[0] - 8, loc[1] - 8, loc[0] + v.width + 8, loc[1] + v.height + 8)
+        val pad = (8 * resources.displayMetrics.density).toInt()
+        val r = Rect(loc[0] - pad, loc[1] - pad, loc[0] + v.width + pad, loc[1] + v.height + pad)
         return list.any { r.contains(it.x, it.y) }
     }
 
