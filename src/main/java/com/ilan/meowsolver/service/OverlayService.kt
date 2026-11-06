@@ -56,7 +56,7 @@ class OverlayService : AccessibilityService() {
         private const val THROTTLE_RETRY_MS = 1000L // takeScreenshot is rate-limited to ~1/s
         private const val HINT_MS = 5000L
         private const val AUTO_SETTLE_MS = 400L // let the game animate before re-reading
-        private const val STOP_GUARD_MS = 600L
+        private const val STOP_GUARD_MS = 1000L // covers a slow press on Stop (cancel fires on finger-down, click on finger-up)
         private const val MAX_FIX_ROUNDS = 3
         private const val FIX_FAIL = "Couldn't place all cats — tap Answer again"
         private const val NO_SOLUTION = "No solution — a placed cat is wrong"

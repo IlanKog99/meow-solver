@@ -1,6 +1,7 @@
 package com.ilan.meowsolver
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.Color as AndroidColor
 import android.net.Uri
 import android.os.Bundle
@@ -31,13 +32,11 @@ class MainActivity : ComponentActivity() {
         val prefs = getSharedPreferences(OverlayService.PREFS, MODE_PRIVATE)
         doubleTapMs = prefs.getInt(OverlayService.K_DOUBLE_MS, MovePlanner.GAP_MS.toInt())
         themeMode = ThemeMode.fromPref(prefs.getString(ThemeMode.PREF_KEY, null))
+        val systemDark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES
+        applyBars(themeMode.isDark(systemDark)) // before first frame: no inset jump, right icon colour
         setContent {
             val dark = themeMode.isDark(isSystemInDarkTheme())
-            LaunchedEffect(dark) {
-                val bar = if (dark) SystemBarStyle.dark(AndroidColor.TRANSPARENT)
-                          else SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
-                enableEdgeToEdge(statusBarStyle = bar, navigationBarStyle = bar)
-            }
+            LaunchedEffect(dark) { applyBars(dark) }
             SetupScreen(
                 SetupState(serviceOn, doubleTapMs, themeMode),
                 dark = dark,
@@ -58,6 +57,12 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         serviceOn = OverlayService.instance != null
+    }
+
+    private fun applyBars(dark: Boolean) {
+        val bar = if (dark) SystemBarStyle.dark(AndroidColor.TRANSPARENT)
+                  else SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
+        enableEdgeToEdge(statusBarStyle = bar, navigationBarStyle = bar)
     }
 
     private fun openAccessibility() = startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
