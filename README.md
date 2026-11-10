@@ -9,7 +9,7 @@ Meowdoku rules: one cat per row, column and colour region; no two cats touch, no
 | ![](docs/screenshots/panel.png) | ![](docs/screenshots/panel-answer-running.png) | ![](docs/screenshots/setup-light.png) | ![](docs/screenshots/setup-dark.png) |
 
 ## Download
-**[⬇ Download MeowSolver-v2.3.apk](https://github.com/IlanKog99/meow-solver/releases/download/v2.3/MeowSolver-v2.3.apk)** (Android 11+, ~1.6 MB) · [all releases](https://github.com/IlanKog99/meow-solver/releases)
+**[⬇ Download MeowSolver-v2.4.apk](https://github.com/IlanKog99/meow-solver/releases/download/v2.4/MeowSolver-v2.4.apk)** (Android 11+, ~1.6 MB) · [all releases](https://github.com/IlanKog99/meow-solver/releases)
 
 ## Setup
 1. Install the APK and open **Meow Solver**.

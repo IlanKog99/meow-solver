@@ -36,9 +36,11 @@ class UiSnapshotTest {
     @Test fun panelRunning() = paparazzi.snapshot { OnGame { Panel(PanelState("Placing cats… 3/10", busy = true, revealOn = false, autoRunning = true)) } }
     @Test fun panelSomeHidden() = paparazzi.snapshot { OnGame { Panel(PanelState("Ready", busy = false, revealOn = false, buttons = setOf(PanelButton.HINT, PanelButton.CAT, PanelButton.ANSWER))) } }
     @Test fun bubble() = paparazzi.snapshot { OnGame { Bubble(onClick = {}) } }
+    @Test fun bubbleQuickHint() = paparazzi.snapshot { OnGame { Bubble(onClick = {}, quick = PanelButton.HINT, onLongClick = {}) } }
+    @Test fun bubbleQuickRunning() = paparazzi.snapshot { OnGame { Bubble(onClick = {}, quick = PanelButton.ANSWER, busy = true, running = true, onLongClick = {}) } }
     @Test fun setupOff() { tall(); paparazzi.snapshot { SetupScreen(SetupState(serviceOn = false, doubleTapMs = 90), dark = false, {}, {}, {}, {}, {}, {}) } }
     @Test fun setupOn() { tall(); paparazzi.snapshot { SetupScreen(SetupState(serviceOn = true, doubleTapMs = 120, themeMode = ThemeMode.LIGHT,
-        overlay = OverlaySettings(order = CatOrder.ROWS, reverse = true, answerX = false, buttons = PanelButton.entries.toSet() - PanelButton.X)), dark = false, {}, {}, {}, {}, {}, {}) } }
+        overlay = OverlaySettings(order = CatOrder.ROWS, reverse = true, answerX = false, buttons = PanelButton.entries.toSet() - PanelButton.X, quickAction = PanelButton.ANSWER)), dark = false, {}, {}, {}, {}, {}, {}) } }
     @Test fun setupDark() { tall(); paparazzi.snapshot { SetupScreen(SetupState(serviceOn = true, doubleTapMs = 90, themeMode = ThemeMode.DARK), dark = true, {}, {}, {}, {}, {}, {}) } }
     // full screen is scrollable; render tall so the slider section is visible
     private fun tall() = paparazzi.unsafeUpdateConfig(DeviceConfig.PIXEL_5.copy(screenHeight = 5600))

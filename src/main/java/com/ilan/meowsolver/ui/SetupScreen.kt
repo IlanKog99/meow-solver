@@ -40,6 +40,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilan.meowsolver.core.CatOrder
@@ -108,6 +109,19 @@ fun SetupScreen(
                     val on = btn in o.buttons
                     SwitchRow(btn.label, null, on, enabled = !(on && o.buttons.size == 1)) { onOverlay(o.withButton(btn, it)) }
                 }
+            }
+
+            SectionTitle("Bubble tap")
+            Card {
+                val shown = PanelButton.entries.filter { it in o.buttons }
+                Segmented(listOf("Open") + shown.map { it.label }, shown.indexOf(o.activeQuickAction) + 1, fontSize = 12.sp) {
+                    onOverlay(o.copy(quickAction = if (it == 0) null else shown[it - 1]))
+                }
+                Text(
+                    o.activeQuickAction?.let { "Tapping the minimized bubble runs ${it.label}. Long-press it to open the panel." }
+                        ?: "Tapping the minimized bubble opens the panel.",
+                    color = c.inkMuted, fontSize = 13.sp,
+                )
             }
 
             SectionTitle("Cat order")
@@ -189,7 +203,7 @@ private fun HowRow(icon: ImageVector, name: String, text: String) {
 }
 
 @Composable
-private fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+private fun Segmented(options: List<String>, selected: Int, fontSize: TextUnit = 14.sp, onSelect: (Int) -> Unit) {
     val c = LocalSetupColors.current
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         options.forEachIndexed { i, label ->
@@ -200,7 +214,7 @@ private fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> U
                     .border(1.dp, if (sel) Meow.Clay else c.ink.copy(alpha = 0.2f), RoundedCornerShape(12.dp))
                     .clickable(onClickLabel = label) { onSelect(i) },
                 contentAlignment = Alignment.Center,
-            ) { Text(label, color = if (sel) Color.White else c.ink, fontSize = 14.sp) }
+            ) { Text(label, color = if (sel) Color.White else c.ink, fontSize = fontSize, maxLines = 1) }
         }
     }
 }

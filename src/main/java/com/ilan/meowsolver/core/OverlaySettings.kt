@@ -10,7 +10,12 @@ data class OverlaySettings(
     val order: CatOrder = CatOrder.RANDOM,
     val reverse: Boolean = false,
     val answerX: Boolean = true,
+    /** Button the minimized bubble runs on tap (long-press then opens the panel); null = tap opens the panel. */
+    val quickAction: PanelButton? = null,
 ) {
+    /** Quick action only counts while its button is shown, so hiding a button also stops it from the bubble. */
+    val activeQuickAction: PanelButton? get() = quickAction?.takeIf { it in buttons }
+
     /** Turns a button on/off; the last visible button can't be turned off. */
     fun withButton(btn: PanelButton, on: Boolean): OverlaySettings {
         val next = if (on) buttons + btn else buttons - btn
@@ -26,14 +31,16 @@ data class OverlaySettings(
         const val K_ORDER = "catOrder"
         const val K_REVERSE = "orderReverse"
         const val K_ANSWER_X = "answerX"
+        const val K_QUICK = "bubbleQuickAction"
 
-        fun decode(buttons: String?, order: String?, reverse: Boolean, answerX: Boolean): OverlaySettings {
+        fun decode(buttons: String?, order: String?, reverse: Boolean, answerX: Boolean, quick: String? = null): OverlaySettings {
             val set = buttons.orEmpty().split(",").mapNotNull { n -> PanelButton.entries.firstOrNull { it.name == n } }.toSet()
             return OverlaySettings(
                 buttons = set.ifEmpty { PanelButton.entries.toSet() },
                 order = CatOrder.entries.firstOrNull { it.name == order } ?: CatOrder.RANDOM,
                 reverse = reverse,
                 answerX = answerX,
+                quickAction = PanelButton.entries.firstOrNull { it.name == quick },
             )
         }
     }
@@ -42,8 +49,10 @@ data class OverlaySettings(
 fun SharedPreferences.overlaySettings() = OverlaySettings.decode(
     getString(OverlaySettings.K_BUTTONS, null), getString(OverlaySettings.K_ORDER, null),
     getBoolean(OverlaySettings.K_REVERSE, false), getBoolean(OverlaySettings.K_ANSWER_X, true),
+    getString(OverlaySettings.K_QUICK, null),
 )
 
 fun SharedPreferences.Editor.putOverlaySettings(s: OverlaySettings): SharedPreferences.Editor =
     putString(OverlaySettings.K_BUTTONS, s.encodeButtons()).putString(OverlaySettings.K_ORDER, s.order.name)
         .putBoolean(OverlaySettings.K_REVERSE, s.reverse).putBoolean(OverlaySettings.K_ANSWER_X, s.answerX)
+        .putString(OverlaySettings.K_QUICK, s.quickAction?.name)
