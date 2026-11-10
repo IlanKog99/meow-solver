@@ -9,7 +9,7 @@ Meowdoku rules: one cat per row, column and colour region; no two cats touch, no
 | ![](docs/screenshots/panel.png) | ![](docs/screenshots/panel-answer-running.png) | ![](docs/screenshots/setup-light.png) | ![](docs/screenshots/setup-dark.png) |
 
 ## Download
-**[⬇ Download MeowSolver-v2.4.apk](https://github.com/IlanKog99/meow-solver/releases/download/v2.4/MeowSolver-v2.4.apk)** (Android 11+, ~1.6 MB) · [all releases](https://github.com/IlanKog99/meow-solver/releases)
+**[⬇ Download MeowSolver-v2.5.apk](https://github.com/IlanKog99/meow-solver/releases/download/v2.5/MeowSolver-v2.5.apk)** (Android 11+, ~1.6 MB) · [all releases](https://github.com/IlanKog99/meow-solver/releases)
 
 ## Setup
 1. Install the APK and open **Meow Solver**.
@@ -26,10 +26,11 @@ Meowdoku rules: one cat per row, column and colour region; no two cats touch, no
 | X | Marks every cell the placed cats rule out |
 | Answer | Solves the level: places all cats (and X's), re-checks the board, places the last cat. Tap **Stop** to halt |
 
-Minimize to a small bubble; drag the panel by its status text; power icon closes it.
+Minimize to a small bubble; drag the panel by its status text (or the cat grip in grid layouts); power icon closes it.
 
 ## Settings (setup screen)
 - **Overlay buttons** — choose which buttons show (at least one).
+- **Overlay layout** — Row · Column · 2 wide · 3 wide, plus **Edit button order** (drag the buttons, then Save).
 - **Cat order** — Random · Rows · Columns, plus Reverse (top→bottom, bottom→top, left→right, right→left). Used by Hint, Cat and Answer.
 - **Answer places** — Cats + X's, or Cats only.
 - **Appearance** — System · Light · Dark.

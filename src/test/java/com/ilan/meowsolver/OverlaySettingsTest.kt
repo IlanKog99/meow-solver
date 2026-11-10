@@ -3,6 +3,8 @@ package com.ilan.meowsolver
 import com.ilan.meowsolver.core.CatOrder
 import com.ilan.meowsolver.core.OverlaySettings
 import com.ilan.meowsolver.core.PanelButton
+import com.ilan.meowsolver.core.PanelLayout
+import com.ilan.meowsolver.core.PanelButton.*
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -39,5 +41,36 @@ class OverlaySettingsTest {
 
     @Test fun orderLabelFollowsSettings() {
         assertEquals("Bottom → top", OverlaySettings(order = CatOrder.ROWS, reverse = true).orderLabel)
+    }
+
+    @Test fun layoutAndOrderRoundTrip() {
+        val s = OverlaySettings(layout = PanelLayout.GRID_3, buttonOrder = listOf(ANSWER, CAT, HINT, REVEAL, X), buttons = setOf(X, CAT))
+        val back = OverlaySettings.decode(s.encodeButtons(), s.order.name, s.reverse, s.answerX, layout = s.layout.name, buttonOrder = s.buttonOrder.joinToString(",") { it.name })
+        assertEquals(s, back)
+        assertEquals(listOf(CAT, X), back.visibleButtons)
+    }
+
+    @Test fun reorderKeepsHiddenButtons() {
+        val s = OverlaySettings(buttons = setOf(CAT, ANSWER, HINT), buttonOrder = listOf(REVEAL, HINT, CAT, X, ANSWER))
+        val next = s.withVisibleOrder(listOf(ANSWER, HINT, CAT))
+        assertEquals(listOf(ANSWER, HINT, CAT, REVEAL, X), next.buttonOrder)
+        assertEquals(listOf(ANSWER, HINT, CAT), next.visibleButtons)
+    }
+
+    @Test fun badOrderIsRepaired() {
+        assertEquals(PanelButton.entries, OverlaySettings.decodeOrder(null))
+        assertEquals(listOf(X, HINT, REVEAL, CAT, ANSWER), OverlaySettings.decodeOrder("X,FOO,HINT,X"))
+        assertEquals(PanelLayout.HORIZONTAL, OverlaySettings.decode(null, null, false, true, layout = "nope").layout)
+    }
+
+    @Test fun layoutCells() {
+        // Handle takes cell 0 in grid layouts: "Fab 1 / 2 3 / 4 5" and "Fab 1 2 / 3 4 5".
+        assertEquals(listOf(0 to 1, 1 to 0, 1 to 1, 2 to 0, 2 to 1), (0..4).map { PanelLayout.GRID_2.cellOf(it) })
+        assertEquals(listOf(0 to 1, 0 to 2, 1 to 0, 1 to 1, 1 to 2), (0..4).map { PanelLayout.GRID_3.cellOf(it) })
+        assertEquals(listOf(1 to 0, 2 to 0), (0..1).map { PanelLayout.VERTICAL.cellOf(it) })
+        assertEquals(0 to 3, PanelLayout.HORIZONTAL.cellOf(3))
+        for (l in PanelLayout.entries) for (i in 0..4) { val (r, c) = l.cellOf(i); assertEquals(i, l.indexAt(r, c, 5)) }
+        assertEquals(0, PanelLayout.GRID_2.indexAt(0, 0, 5)) // handle cell → first slot
+        assertEquals(4, PanelLayout.VERTICAL.indexAt(9, 3, 5)) // past the end → last slot
     }
 }

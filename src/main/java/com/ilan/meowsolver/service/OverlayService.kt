@@ -134,7 +134,9 @@ class OverlayService : AccessibilityService() {
 
     private fun applySettings() {
         settings = prefs.overlaySettings()
-        panel = panel.copy(buttons = settings.buttons, quick = settings.activeQuickAction)
+        // Card size follows layout + visible buttons: re-clamp on screen (expanding the bubble settles on its own).
+        if (mode == Mode.CARD && (settings.layout != panel.layout || settings.visibleButtons != panel.buttons)) settle()
+        panel = panel.copy(buttons = settings.visibleButtons, layout = settings.layout, quick = settings.activeQuickAction)
         if (PanelButton.REVEAL !in settings.buttons && panel.revealOn) {
             panel = panel.copy(revealOn = false)
             marks = marks.copy(rings = emptyList())

@@ -32,7 +32,13 @@ import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -45,7 +51,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilan.meowsolver.core.CatOrder
 import com.ilan.meowsolver.core.OverlaySettings
-import com.ilan.meowsolver.core.PanelButton
+import com.ilan.meowsolver.core.PanelLayout
 import kotlin.math.roundToInt
 
 data class SetupColors(val bg: Color, val card: Color, val ink: Color, val inkMuted: Color) {
@@ -105,7 +111,7 @@ fun SetupScreen(
             val o = state.overlay
             SectionTitle("Overlay buttons")
             Card {
-                for (btn in PanelButton.entries) {
+                for (btn in o.buttonOrder) {
                     val on = btn in o.buttons
                     SwitchRow(btn.label, null, on, enabled = !(on && o.buttons.size == 1)) { onOverlay(o.withButton(btn, it)) }
                 }
@@ -113,7 +119,7 @@ fun SetupScreen(
 
             SectionTitle("Bubble tap")
             Card {
-                val shown = PanelButton.entries.filter { it in o.buttons }
+                val shown = o.visibleButtons
                 Segmented(listOf("Open") + shown.map { it.label }, shown.indexOf(o.activeQuickAction) + 1, fontSize = 12.sp) {
                     onOverlay(o.copy(quickAction = if (it == 0) null else shown[it - 1]))
                 }
@@ -122,6 +128,20 @@ fun SetupScreen(
                         ?: "Tapping the minimized bubble opens the panel.",
                     color = c.inkMuted, fontSize = 13.sp,
                 )
+            }
+
+            SectionTitle("Overlay layout")
+            var editing by remember { mutableStateOf(false) }
+            Card {
+                Segmented(PanelLayout.entries.map { it.label }, o.layout.ordinal) { onOverlay(o.copy(layout = PanelLayout.entries[it])) }
+                OutlinedButton(onClick = { editing = true }, shape = RoundedCornerShape(12.dp), modifier = Modifier.fillMaxWidth()) {
+                    Text("Edit button order", color = c.ink, fontSize = 14.sp)
+                }
+            }
+            // Fits a 360dp phone: the default dialog width is too narrow for the 5-wide row.
+            if (editing) Dialog(onDismissRequest = { editing = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+                ButtonOrderEditor(o.layout, o.visibleButtons, c, modifier = Modifier.padding(horizontal = 12.dp),
+                    onSave = { onOverlay(o.withVisibleOrder(it)); editing = false }, onCancel = { editing = false })
             }
 
             SectionTitle("Cat order")
