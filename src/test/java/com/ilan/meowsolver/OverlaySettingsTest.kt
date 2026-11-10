@@ -27,6 +27,16 @@ class OverlaySettingsTest {
         assertEquals(PanelButton.entries.toSet() - PanelButton.X, OverlaySettings().withButton(PanelButton.X, false).buttons)
     }
 
+    @Test fun quickActionRoundTripAndOnlyWhenShown() {
+        assertEquals(null, OverlaySettings.decode(null, null, false, true).quickAction)
+        assertEquals(null, OverlaySettings.decode(null, null, false, true, "NOPE").quickAction)
+        assertEquals(PanelButton.CAT, OverlaySettings.decode(null, null, false, true, "CAT").quickAction)
+        val s = OverlaySettings(quickAction = PanelButton.HINT)
+        assertEquals(PanelButton.HINT, s.activeQuickAction)
+        assertEquals(null, s.withButton(PanelButton.HINT, false).activeQuickAction)
+        assertEquals(PanelButton.HINT, s.withButton(PanelButton.HINT, false).withButton(PanelButton.HINT, true).activeQuickAction)
+    }
+
     @Test fun orderLabelFollowsSettings() {
         assertEquals("Bottom → top", OverlaySettings(order = CatOrder.ROWS, reverse = true).orderLabel)
     }

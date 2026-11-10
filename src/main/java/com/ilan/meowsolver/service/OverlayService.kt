@@ -11,12 +11,14 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.Display
 import android.view.Gravity
+import android.view.HapticFeedbackConstants
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.WindowManager
 import android.view.WindowManager.LayoutParams as LP
 import android.view.accessibility.AccessibilityEvent
+import android.widget.Toast
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -89,6 +91,14 @@ class OverlayService : AccessibilityService() {
     private var dragDownX = 0f; private var dragDownY = 0f
     private var dragWinX = 0; private var dragWinY = 0
     private var dragMoved = false
+    private var longPressed = false // long-press already fired for this touch: its finger-up is not a tap
+    private var onLongPress: (() -> Unit)? = null
+    private val longPressRunnable = Runnable {
+        if (dragMoved) return@Runnable
+        longPressed = true
+        panelView?.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        onLongPress?.invoke()
+    }
 
     override fun onServiceConnected() {
         wm = getSystemService(WindowManager::class.java)
@@ -124,7 +134,7 @@ class OverlayService : AccessibilityService() {
 
     private fun applySettings() {
         settings = prefs.overlaySettings()
-        panel = panel.copy(buttons = settings.buttons)
+        panel = panel.copy(buttons = settings.buttons, quick = settings.activeQuickAction)
         if (PanelButton.REVEAL !in settings.buttons && panel.revealOn) {
             panel = panel.copy(revealOn = false)
             marks = marks.copy(rings = emptyList())
@@ -183,21 +193,26 @@ class OverlayService : AccessibilityService() {
     }
 
     /** Raw screen coordinates: the window moves under the finger, so local deltas would jitter. */
-    private fun dragTouch(e: MotionEvent, onClick: (() -> Unit)?): Boolean {
+    private fun dragTouch(e: MotionEvent, onClick: (() -> Unit)?, longPress: (() -> Unit)? = null): Boolean {
         when (e.actionMasked) {
-            MotionEvent.ACTION_DOWN -> { dragDownX = e.rawX; dragDownY = e.rawY; dragWinX = panelLp.x; dragWinY = panelLp.y; dragMoved = false }
+            MotionEvent.ACTION_DOWN -> {
+                dragDownX = e.rawX; dragDownY = e.rawY; dragWinX = panelLp.x; dragWinY = panelLp.y; dragMoved = false; longPressed = false
+                onLongPress = longPress
+                handler.removeCallbacks(longPressRunnable)
+                if (longPress != null && !panel.autoRunning) handler.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
+            }
             MotionEvent.ACTION_MOVE -> {
-                if (panel.autoRunning) return true // panel must not move under injected taps
+                if (panel.autoRunning || longPressed) { handler.removeCallbacks(longPressRunnable); return true } // panel must not move under injected taps
                 val dx = e.rawX - dragDownX; val dy = e.rawY - dragDownY
-                if (!dragMoved && hypot(dx, dy) > ViewConfiguration.get(this).scaledTouchSlop) dragMoved = true
+                if (!dragMoved && hypot(dx, dy) > ViewConfiguration.get(this).scaledTouchSlop) { dragMoved = true; handler.removeCallbacks(longPressRunnable) }
                 val view = panelView
                 if (dragMoved && view != null) {
                     panelLp.x = dragWinX + dx.toInt(); panelLp.y = dragWinY + dy.toInt()
                     wm.updateViewLayout(view, panelLp)
                 }
             }
-            MotionEvent.ACTION_UP -> if (dragMoved) endDrag() else onClick?.invoke()
-            MotionEvent.ACTION_CANCEL -> if (dragMoved) endDrag()
+            MotionEvent.ACTION_UP -> { handler.removeCallbacks(longPressRunnable); if (dragMoved) endDrag() else if (!longPressed) onClick?.invoke() }
+            MotionEvent.ACTION_CANCEL -> { handler.removeCallbacks(longPressRunnable); if (dragMoved) endDrag() }
         }
         return true
     }
@@ -234,14 +249,30 @@ class OverlayService : AccessibilityService() {
                 onAnswer = ::answer, onMinimize = { if (!panel.autoRunning) { mode = Mode.BUBBLE; settle() } }, onClose = ::close,
                 dragModifier = Modifier.pointerInteropFilter { dragTouch(it, null) }, // applied to the status text only
             )
-            Mode.BUBBLE -> Bubble(
-                onClick = { if (!panel.autoRunning) { mode = Mode.CARD; settle() } }, // touch taps are consumed by dragTouch; this serves TalkBack
-                modifier = Modifier.pointerInteropFilter { dragTouch(it) { if (!panel.autoRunning) { mode = Mode.CARD; settle() } } },
-            )
+            Mode.BUBBLE -> {
+                // Quick action set: tap runs it, long-press opens the panel. Otherwise tap opens it.
+                val quick = panel.quick
+                val expand = { if (!panel.autoRunning) { mode = Mode.CARD; settle() } }
+                val tap = if (quick == null) expand else { { runQuick(quick) } }
+                val long = if (quick == null) null else expand
+                Bubble(
+                    onClick = tap, onLongClick = long, // touch is consumed by dragTouch; these serve TalkBack
+                    quick = quick, busy = panel.busy, running = panel.autoRunning,
+                    modifier = Modifier.pointerInteropFilter { dragTouch(it, tap, long) },
+                )
+            }
         }
     }
 
     // ---------- actions ----------
+
+    private fun runQuick(b: PanelButton) = when (b) {
+        PanelButton.REVEAL -> toggleReveal()
+        PanelButton.HINT -> hint()
+        PanelButton.CAT -> placeCat()
+        PanelButton.X -> markX()
+        PanelButton.ANSWER -> answer()
+    }
 
     private fun hint() = withBoard { b, sol ->
         sol ?: return@withBoard done(NO_SOLUTION)
@@ -338,7 +369,11 @@ class OverlayService : AccessibilityService() {
 
     // ---------- plumbing ----------
 
-    private fun done(msg: String) { panel = panel.copy(status = msg, busy = false, autoRunning = false) }
+    private fun done(msg: String) {
+        panel = panel.copy(status = msg, busy = false, autoRunning = false)
+        // Bubble hides the status line, so a quick action's result would be silent.
+        if (mode == Mode.BUBBLE && panelView != null) Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
+    }
 
     private fun runTaps(list: List<Tap>, success: () -> String) {
         val s = session
