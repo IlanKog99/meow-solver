@@ -13,7 +13,10 @@ import app.cash.paparazzi.Paparazzi
 import com.ilan.meowsolver.core.CatOrder
 import com.ilan.meowsolver.core.OverlaySettings
 import com.ilan.meowsolver.core.PanelButton
+import com.ilan.meowsolver.core.PanelLayout
 import com.ilan.meowsolver.ui.Bubble
+import com.ilan.meowsolver.ui.ButtonOrderEditor
+import com.ilan.meowsolver.ui.SetupColors
 import com.ilan.meowsolver.ui.PanelCard
 import com.ilan.meowsolver.ui.PanelState
 import com.ilan.meowsolver.ui.SetupScreen
@@ -34,7 +37,14 @@ class UiSnapshotTest {
     @Test fun panelBusy() = paparazzi.snapshot { OnGame { Panel(PanelState("Working…", busy = true, revealOn = false)) } }
     @Test fun panelRevealOn() = paparazzi.snapshot { OnGame { Panel(PanelState("Showing 7 cats", busy = false, revealOn = true)) } }
     @Test fun panelRunning() = paparazzi.snapshot { OnGame { Panel(PanelState("Placing cats… 3/10", busy = true, revealOn = false, autoRunning = true)) } }
-    @Test fun panelSomeHidden() = paparazzi.snapshot { OnGame { Panel(PanelState("Ready", busy = false, revealOn = false, buttons = setOf(PanelButton.HINT, PanelButton.CAT, PanelButton.ANSWER))) } }
+    @Test fun panelSomeHidden() = paparazzi.snapshot { OnGame { Panel(PanelState("Ready", busy = false, revealOn = false, buttons = listOf(PanelButton.HINT, PanelButton.CAT, PanelButton.ANSWER))) } }
+    @Test fun panelVertical() = paparazzi.snapshot { OnGame { Panel(PanelState("Next cat: row 3, col 4", busy = false, revealOn = false, layout = PanelLayout.VERTICAL)) } }
+    @Test fun panelGrid2() = paparazzi.snapshot { OnGame { Panel(PanelState("Ready", busy = false, revealOn = true, layout = PanelLayout.GRID_2)) } }
+    @Test fun panelGrid3Reordered() = paparazzi.snapshot { OnGame { Panel(PanelState("Ready", busy = false, revealOn = false, layout = PanelLayout.GRID_3,
+        buttons = listOf(PanelButton.ANSWER, PanelButton.CAT, PanelButton.HINT, PanelButton.X, PanelButton.REVEAL))) } }
+    @Test fun orderEditorGrid3() = paparazzi.snapshot { OnGame { ButtonOrderEditor(PanelLayout.GRID_3,
+        listOf(PanelButton.ANSWER, PanelButton.CAT, PanelButton.HINT, PanelButton.REVEAL), SetupColors.Light, {}, {}) } }
+    @Test fun orderEditorHorizontal() = paparazzi.snapshot { OnGame { ButtonOrderEditor(PanelLayout.HORIZONTAL, PanelButton.entries, SetupColors.Dark, {}, {}) } }
     @Test fun bubble() = paparazzi.snapshot { OnGame { Bubble(onClick = {}) } }
     @Test fun bubbleQuickHint() = paparazzi.snapshot { OnGame { Bubble(onClick = {}, quick = PanelButton.HINT, onLongClick = {}) } }
     @Test fun bubbleQuickRunning() = paparazzi.snapshot { OnGame { Bubble(onClick = {}, quick = PanelButton.ANSWER, busy = true, running = true, onLongClick = {}) } }

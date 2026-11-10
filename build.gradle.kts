@@ -14,8 +14,8 @@ android {
         applicationId = "com.ilan.meowsolver"
         minSdk = 30 // takeScreenshot() needs Android 11+
         targetSdk = 35
-        versionCode = 3
-        versionName = "2.4"
+        versionCode = 4
+        versionName = "2.5"
     }
     buildTypes {
         release {

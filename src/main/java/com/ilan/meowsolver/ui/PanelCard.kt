@@ -22,13 +22,18 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.ilan.meowsolver.core.PanelButton
+import com.ilan.meowsolver.core.PanelLayout
 
 data class PanelState(val status: String, val busy: Boolean, val revealOn: Boolean, val autoRunning: Boolean = false,
-    val buttons: Set<PanelButton> = PanelButton.entries.toSet(), val quick: PanelButton? = null)
+    val buttons: List<PanelButton> = PanelButton.entries, val quick: PanelButton? = null, val layout: PanelLayout = PanelLayout.HORIZONTAL)
+
+private val CELL = 54.dp
+private val GAP = 4.dp
 
 @Composable
 fun PanelCard(
@@ -37,6 +42,19 @@ fun PanelCard(
     onMinimize: () -> Unit, onClose: () -> Unit,
     dragModifier: Modifier = Modifier,
 ) {
+    val button: @Composable (PanelButton) -> Unit = { btn ->
+        val on = !state.busy
+        when (btn) {
+            PanelButton.REVEAL -> ActionButton(btn.icon, btn.label, on, toggled = state.revealOn, onClick = onReveal)
+            PanelButton.HINT -> ActionButton(btn.icon, btn.label, on, onClick = onHint)
+            PanelButton.CAT -> ActionButton(btn.icon, btn.label, on, filled = true, onClick = onCat)
+            PanelButton.X -> ActionButton(btn.icon, btn.label, on, onClick = onX)
+            PanelButton.ANSWER ->
+                if (state.autoRunning) ActionButton(MeowIcons.Stop, "Stop", true, toggled = true, onClick = onAnswer)
+                else ActionButton(btn.icon, btn.label, on, onClick = onAnswer)
+        }
+    }
+    if (state.layout.handleInGrid) return GridCard(state, button, onMinimize, onClose, dragModifier)
     Column(
         Modifier.width(300.dp).background(Meow.Card, RoundedCornerShape(16.dp)).padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
@@ -49,16 +67,53 @@ fun PanelCard(
             HeaderIcon(MeowIcons.Power, "Close", onClose)
         }
         Row(Modifier.fillMaxWidth().padding(top = 2.dp, bottom = 2.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-            val on = !state.busy
-            if (PanelButton.REVEAL in state.buttons) ActionButton(PanelButton.REVEAL.icon, "Reveal", on, toggled = state.revealOn, onClick = onReveal)
-            if (PanelButton.HINT in state.buttons) ActionButton(PanelButton.HINT.icon, "Hint", on, onClick = onHint)
-            if (PanelButton.CAT in state.buttons) ActionButton(PanelButton.CAT.icon, "Cat", on, filled = true, onClick = onCat)
-            if (PanelButton.X in state.buttons) ActionButton(PanelButton.X.icon, "X", on, onClick = onX)
-            if (PanelButton.ANSWER in state.buttons) {
-                if (state.autoRunning) ActionButton(MeowIcons.Stop, "Stop", true, toggled = true, onClick = onAnswer)
-                else ActionButton(PanelButton.ANSWER.icon, "Answer", on, onClick = onAnswer)
+            state.buttons.forEach { button(it) }
+        }
+    }
+}
+
+/** Vertical / grid layouts: the handle (drag grip + minimize/close) is the first cell, status sits under the grid. */
+@Composable
+private fun GridCard(
+    state: PanelState, button: @Composable (PanelButton) -> Unit,
+    onMinimize: () -> Unit, onClose: () -> Unit, dragModifier: Modifier,
+) {
+    val cols = state.layout.cols
+    val width = CELL * cols + GAP * (cols - 1)
+    Column(
+        Modifier.background(Meow.Card, RoundedCornerShape(16.dp)).padding(6.dp),
+        verticalArrangement = Arrangement.spacedBy(GAP),
+    ) {
+        (listOf<PanelButton?>(null) + state.buttons).chunked(cols).forEach { row ->
+            Row(horizontalArrangement = Arrangement.spacedBy(GAP)) {
+                row.forEach { if (it == null) Handle(onMinimize, onClose, dragModifier) else button(it) }
             }
         }
+        Text(
+            state.status, color = Meow.OnCardMuted, fontSize = 11.sp, lineHeight = 13.sp, maxLines = 4, overflow = TextOverflow.Ellipsis,
+            textAlign = TextAlign.Center, modifier = Modifier.width(width).then(dragModifier),
+        )
+    }
+}
+
+@Composable
+private fun Handle(onMinimize: () -> Unit, onClose: () -> Unit, dragModifier: Modifier) {
+    Column(Modifier.width(CELL), horizontalAlignment = Alignment.CenterHorizontally) {
+        Box(
+            Modifier.size(28.dp).clip(CircleShape).background(Meow.Clay).then(dragModifier),
+            contentAlignment = Alignment.Center,
+        ) { Icon(MeowIcons.Cat, contentDescription = null, tint = Meow.OnCard, modifier = Modifier.size(18.dp)) }
+        Row {
+            SmallIcon(MeowIcons.Minus, "Minimize", onMinimize)
+            SmallIcon(MeowIcons.Power, "Close", onClose)
+        }
+    }
+}
+
+@Composable
+private fun SmallIcon(icon: ImageVector, desc: String, onClick: () -> Unit) {
+    Box(Modifier.size(26.dp).clip(CircleShape).clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Icon(icon, contentDescription = desc, tint = Meow.OnCardMuted, modifier = Modifier.size(16.dp))
     }
 }
 
@@ -73,7 +128,7 @@ private fun ActionButton(
         else -> Color.Transparent
     }
     Column(
-        Modifier.width(54.dp).alpha(if (enabled) 1f else 0.4f).clip(RoundedCornerShape(12.dp)).background(bg)
+        Modifier.width(CELL).alpha(if (enabled) 1f else 0.4f).clip(RoundedCornerShape(12.dp)).background(bg)
             .clickable(enabled = enabled, onClickLabel = label, onClick = onClick).padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
