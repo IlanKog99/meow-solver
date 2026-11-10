@@ -1,9 +1,12 @@
 name: Release
 
-# Push a tag like v2.3 → creates a GitHub Release with dist/MeowSolver-<tag>.apk attached.
+# Add dist/MeowSolver-vX.apk + dist/release-notes-vX.md and push to main
+# → creates tag vX and a GitHub Release with the APK attached (skips versions already released).
 on:
   push:
-    tags: ["v*"]
+    branches: [main]
+    paths: ["dist/release-notes-*.md"]
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -13,11 +16,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Create release
+      - name: Create missing releases
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" "dist/MeowSolver-$TAG.apk" \
-            --title "Meow Solver $TAG" \
-            --notes-file "dist/release-notes-$TAG.md"
+          for notes in dist/release-notes-*.md; do
+            tag="${notes#dist/release-notes-}"; tag="${tag%.md}"
+            apk="dist/MeowSolver-$tag.apk"
+            if gh release view "$tag" >/dev/null 2>&1; then echo "$tag already released"; continue; fi
+            [ -f "$apk" ] || { echo "::error::$apk missing"; exit 1; }
+            gh release create "$tag" "$apk" --target "$GITHUB_SHA" --title "Meow Solver $tag" --notes-file "$notes" --latest
+          done
