@@ -1,0 +1,23 @@
+name: Release
+
+# Push a tag like v2.3 → creates a GitHub Release with dist/MeowSolver-<tag>.apk attached.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" "dist/MeowSolver-$TAG.apk" \
+            --title "Meow Solver $TAG" \
+            --notes-file "dist/release-notes-$TAG.md"
