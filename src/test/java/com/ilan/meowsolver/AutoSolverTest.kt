@@ -155,4 +155,36 @@ class AutoSolverTest {
         val up = AutoSolver.plan(b, sol, CatOrder.ROWS, reverse = true).filter { it.double }.map { b.cellOf(it) / 8 }
         assertEquals((7 downTo 1).toList(), up)
     }
+
+    @Test fun missedCatRoundNeverClearsAnXItPlaced() {
+        for (e in Fixtures.expected()) {
+            val b = Fixtures.board(e.name)
+            val sol = Solver.solve(b)!!
+            val plan = AutoSolver.plan(b, sol, rnd = Random(1))
+            val missed = plan.firstOrNull { it.double } ?: continue
+            val mid = b.after(plan - missed) // that cat's X's went on anyway
+            val solCells = sol.mapIndexed { r, c -> r * b.n + c }.toSet()
+            val again = AutoSolver.replan(mid, Solver.solve(mid)!!, first = false, rnd = Random(1))
+            // The only taps on an X are a cat's own clear-then-double-tap on a solution cell.
+            for (t in again) assertTrue("${e.name}: round 2 touches X ${mid.cellOf(t)}", mid.state[mid.cellOf(t)] != Cell.X || mid.cellOf(t) in solCells)
+            val fin = mid.after(again)
+            assertTrue("${e.name}", AutoSolver.check(fin, Solver.solve(fin)) is Check.LastOnly)
+            assertEquals("${e.name}: X's off the solution all stay", (0 until b.n * b.n).filter { mid.state[it] == Cell.X && it !in solCells },
+                (0 until b.n * b.n).filter { mid.state[it] == Cell.X && it !in solCells && fin.state[it] == Cell.X })
+        }
+    }
+
+    @Test fun replanReMarksMissedXsThenPausesBeforeTheFirstCat() {
+        val b = Fixtures.board("hi_211922.jpg")
+        val sol = Solver.solve(b)!!
+        val plan = AutoSolver.plan(b, sol, rnd = Random(2))
+        val dropped = listOf(plan.first { it.drag.isNotEmpty() }, plan.last { it.double }) // a missed drag and a missed cat
+        val mid = b.after(plan - dropped.toSet())
+        val again = AutoSolver.replan(mid, sol, first = false, rnd = Random(2))
+        val firstCat = again.indexOfFirst { it.double }
+        assertTrue("re-marks before cats", firstCat > 0)
+        assertEquals(MovePlanner.CLEAR_PAUSE_MS, again[firstCat - 1].pauseAfterMs)
+        val fixed = mid.after(again.take(firstCat))
+        assertEquals(emptyList<Int>(), MovePlanner.xTargets(fixed).filter { fixed.state[it] == Cell.EMPTY })
+    }
 }

@@ -67,6 +67,7 @@ class OverlayService : AccessibilityService() {
         private const val FIX_FAIL = "Couldn't place all cats — tap Answer again"
         private const val NO_SOLUTION = "No solution — a placed cat is wrong"
         private const val READ_FAIL = "Couldn't read the screen. Try again"
+        private const val UNSTABLE = "Board keeps changing — tap again"
     }
 
     private enum class Mode { CARD, BUBBLE }
@@ -87,7 +88,6 @@ class OverlayService : AccessibilityService() {
     // Held as a field: SharedPreferences keeps listeners weakly.
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> applySettings() }
     private var hintToken = 0
-    private var answerKeep = emptySet<Int>() // X's on the board when auto-Answer started: the user's, never "wrong"
     private var stoppedAt = 0L // a finger-down cancels in-flight gestures; ignore the Stop tap's own click after that
     private var session = 0 // bumped by close()/unbind: in-flight work from an older session is dropped
     private var dragDownX = 0f; private var dragDownY = 0f
@@ -306,21 +306,41 @@ class OverlayService : AccessibilityService() {
 
     /** Drags, re-reads, then clears X's marked by mistake and re-marks missed cells until the board matches. */
     private fun markAndVerify(gestures: List<Tap>, want: Set<Int>, keep: Set<Int>, round: Int): Unit = autoTaps(gestures) {
-        val s = session
-        handler.postDelayed({
-            if (s == session) withBoard(needSolution = false, internal = true) { b, _ ->
-                val (wrong, missing) = MovePlanner.xErrors(b, want, keep)
-                when {
-                    wrong.isEmpty() && missing.isEmpty() -> done("Marked ${want.size} cells")
-                    round >= MAX_FIX_ROUNDS -> done("Marked cells — ${wrong.size + missing.size} still off, tap X again")
-                    else -> {
-                        panel = panel.copy(status = "Fixing ${wrong.size + missing.size} cells…")
-                        markAndVerify(MovePlanner.fix(b, wrong, missing).first, want, keep, round + 1)
-                    }
-                }
-            }
-        }, AUTO_SETTLE_MS)
+        settleThen(needSolution = false) { b, _ -> verifyX(b, want, keep, round, confirmed = false) }
     }
+
+    private fun verifyX(b: Board, want: Set<Int>, keep: Set<Int>, round: Int, confirmed: Boolean) {
+        val (wrong, missing) = MovePlanner.xErrors(b, want, keep)
+        when {
+            wrong.isEmpty() && missing.isEmpty() -> done("Marked ${want.size} cells")
+            // Every fix gesture toggles, so acting on a misread cell creates the very mistake it meant to fix.
+            !confirmed -> confirmRead(b, needSolution = false) { b2, _ -> verifyX(b2, want, keep, round, confirmed = true) }
+            round >= MAX_FIX_ROUNDS -> done("Marked cells — ${wrong.size + missing.size} still off, tap X again")
+            else -> {
+                panel = panel.copy(status = "Fixing ${wrong.size + missing.size} cells…")
+                markAndVerify(MovePlanner.fix(b, wrong, missing).first, want, keep, round + 1)
+            }
+        }
+    }
+
+    /** Waits for the game to animate, then reads the board. */
+    private fun settleThen(needSolution: Boolean, action: (Board, IntArray?) -> Unit) {
+        val s = session
+        handler.postDelayed({ if (s == session) withBoard(needSolution, internal = true, action) }, AUTO_SETTLE_MS)
+    }
+
+    /**
+     * Re-reads until two reads in a row agree, then runs [action] on that board. One screenshot can catch a cell
+     * mid-animation (an X not drawn yet, a cat still fading in); a tap planned from it would undo a correct cell.
+     */
+    private fun confirmRead(prev: Board, needSolution: Boolean, tries: Int = 3, action: (Board, IntArray?) -> Unit): Unit =
+        settleThen(needSolution) { b, sol ->
+            when {
+                b.n == prev.n && b.state contentEquals prev.state -> action(b, sol)
+                tries > 1 -> confirmRead(b, needSolution, tries - 1, action)
+                else -> done(UNSTABLE)
+            }
+        }
 
     private fun toggleReveal() {
         if (panel.busy) return
@@ -351,7 +371,11 @@ class OverlayService : AccessibilityService() {
     }
 
     /** One read → check → act round. First round plans everything but the last cat; later rounds fix or finish. */
-    private fun answerStep(fixes: Int, first: Boolean): Unit = withBoard(internal = true) { b, sol ->
+    private fun answerStep(fixes: Int, first: Boolean): Unit =
+        if (first) withBoard(internal = true) { b, sol -> answerAct(b, sol, fixes, true, confirmed = true) }
+        else settleThen(needSolution = true) { b, sol -> answerAct(b, sol, fixes, false, confirmed = false) }
+
+    private fun answerAct(b: Board, sol: IntArray?, fixes: Int, first: Boolean, confirmed: Boolean) {
         panel = panel.copy(status = "Placing cats… ${b.cats.size}/${b.n}")
         when (val c = AutoSolver.check(b, sol)) {
             Check.Solved -> done("Solved")
@@ -362,19 +386,10 @@ class OverlayService : AccessibilityService() {
             }
             is Check.Missing ->
                 if (!first && fixes >= MAX_FIX_ROUNDS) done(FIX_FAIL)
-                else {
-                    // Verify the last round's X drags: clear X's no cat rules out (and the user didn't place), re-mark missed ones.
-                    if (first) answerKeep = (0 until b.n * b.n).filter { b.state[it] == Cell.X }.toSet()
-                    val (wrong, missing) = if (first || !settings.answerX) emptyList<Int>() to emptyList()
-                        else MovePlanner.xErrors(b, MovePlanner.xTargets(b).toSet(), answerKeep)
-                    val (fixTaps, st) = MovePlanner.fix(b, wrong, missing)
-                    val fixed = Board(b.n, b.colL, b.colR, b.rowT, b.rowB, b.region, st)
-                    autoTaps(fixTaps + AutoSolver.plan(fixed, sol!!, settings.order, settings.reverse, settings.answerX)) {
-                    val s = session
-                    handler.postDelayed({
-                        if (s == session) answerStep(if (first) 0 else fixes + 1, first = false)
-                    }, AUTO_SETTLE_MS)
-                    }
+                // A missed cat or X may just be mid-animation: only re-tap what a second read also shows.
+                else if (!confirmed) confirmRead(b, needSolution = true) { b2, sol2 -> answerAct(b2, sol2, fixes, false, confirmed = true) }
+                else autoTaps(AutoSolver.replan(b, sol!!, first, settings.order, settings.reverse, settings.answerX)) {
+                    answerStep(if (first) 0 else fixes + 1, first = false)
                 }
         }
     }

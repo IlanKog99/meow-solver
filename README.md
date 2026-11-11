@@ -9,7 +9,7 @@ Meowdoku rules: one cat per row, column and colour region; no two cats touch, no
 | ![](docs/screenshots/panel.png) | ![](docs/screenshots/panel-answer-running.png) | ![](docs/screenshots/setup-light.png) | ![](docs/screenshots/setup-dark.png) |
 
 ## Download
-**[⬇ Download MeowSolver-v2.7.apk](https://github.com/IlanKog99/meow-solver/releases/download/v2.7/MeowSolver-v2.7.apk)** (Android 11+, ~1.6 MB) · [all releases](https://github.com/IlanKog99/meow-solver/releases)
+**[⬇ Download MeowSolver-v2.8.apk](https://github.com/IlanKog99/meow-solver/releases/download/v2.8/MeowSolver-v2.8.apk)** (Android 11+, ~1.6 MB) · [all releases](https://github.com/IlanKog99/meow-solver/releases)
 
 ## Setup
 1. Install the APK and open **Meow Solver**.
@@ -23,7 +23,7 @@ Meowdoku rules: one cat per row, column and colour region; no two cats touch, no
 | Reveal | Rings every remaining solution cell (toggle) |
 | Hint | Shows the next cat for 5 s |
 | Cat | Places the next cat (the hinted one if a hint is showing) |
-| X | Marks every cell the placed cats rule out, by dragging (a row, column or ring around a cat is one swipe), then re-reads the board and fixes any cell marked by mistake |
+| X | Marks every cell the placed cats rule out, by dragging (a row, column or ring around a cat is one swipe), then re-reads the board and fixes any cell marked by mistake (only once a second read agrees, so it never "fixes" a cell that was still animating) |
 | Answer | Solves the level: places all cats (and X's), re-checks the board, places the last cat. Tap **Stop** to halt |
 
 Minimize to a small bubble; drag the panel by its status text (or the cat grip in grid layouts); power icon closes it.
