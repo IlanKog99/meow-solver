@@ -9,7 +9,7 @@ Meowdoku rules: one cat per row, column and colour region; no two cats touch, no
 | ![](docs/screenshots/panel.png) | ![](docs/screenshots/panel-answer-running.png) | ![](docs/screenshots/setup-light.png) | ![](docs/screenshots/setup-dark.png) |
 
 ## Download
-**[⬇ Download MeowSolver-v2.6.apk](https://github.com/IlanKog99/meow-solver/releases/download/v2.6/MeowSolver-v2.6.apk)** (Android 11+, ~1.6 MB) · [all releases](https://github.com/IlanKog99/meow-solver/releases)
+**[⬇ Download MeowSolver-v2.7.apk](https://github.com/IlanKog99/meow-solver/releases/download/v2.7/MeowSolver-v2.7.apk)** (Android 11+, ~1.6 MB) · [all releases](https://github.com/IlanKog99/meow-solver/releases)
 
 ## Setup
 1. Install the APK and open **Meow Solver**.
@@ -46,6 +46,8 @@ Kotlin 2.0 · Jetpack Compose · minSdk 30 · targetSdk 35.
 ```bash
 ./gradlew assembleRelease testDebugUnitTest   # needs ANDROID_HOME set
 ```
+Signing: releases from v2.7 use one fixed key so each new APK installs as an update. The keystore is kept out of this public repo; the build reads `signing.properties` (storeFile, storePassword, keyAlias, keyPassword) from `$MEOW_SIGNING` or the project's private shared folder, and falls back to the debug key when it's missing (fine for local builds, but such an APK won't update a release install).
+
 Tests: board reading against 41 real level screenshots, solver, move planner, auto-solve simulation, settings, and Paparazzi UI snapshots.
 
 Design docs: [`docs/superpowers`](docs/superpowers).
