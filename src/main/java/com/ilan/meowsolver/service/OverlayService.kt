@@ -31,6 +31,7 @@ import com.ilan.meowsolver.core.AutoSolver
 import com.ilan.meowsolver.core.Board
 import com.ilan.meowsolver.core.BoardNotFound
 import com.ilan.meowsolver.core.BoardReader
+import com.ilan.meowsolver.core.Cell
 import com.ilan.meowsolver.core.Check
 import com.ilan.meowsolver.core.MovePlanner
 import com.ilan.meowsolver.core.OverlaySettings
@@ -86,6 +87,7 @@ class OverlayService : AccessibilityService() {
     // Held as a field: SharedPreferences keeps listeners weakly.
     private val prefListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> applySettings() }
     private var hintToken = 0
+    private var answerKeep = emptySet<Int>() // X's on the board when auto-Answer started: the user's, never "wrong"
     private var stoppedAt = 0L // a finger-down cancels in-flight gestures; ignore the Stop tap's own click after that
     private var session = 0 // bumped by close()/unbind: in-flight work from an older session is dropped
     private var dragDownX = 0f; private var dragDownY = 0f
@@ -295,10 +297,29 @@ class OverlayService : AccessibilityService() {
         }
     }
 
-    private fun markX() = withBoard(needSolution = false) { b, _ ->
-        val t = MovePlanner.xTaps(b)
-        if (t.isEmpty()) return@withBoard done("Nothing to mark")
-        runTaps(t) { "Marked ${t.size} cells" }
+    private fun markX(): Unit = withBoard(needSolution = false) { b, _ ->
+        val want = MovePlanner.xTargets(b).toSet()
+        if (want.isEmpty()) return@withBoard done("Nothing to mark")
+        panel = panel.copy(status = "Marking…")
+        markAndVerify(MovePlanner.xTaps(b), want, keep = (0 until b.n * b.n).filter { b.state[it] == Cell.X }.toSet(), round = 0)
+    }
+
+    /** Drags, re-reads, then clears X's marked by mistake and re-marks missed cells until the board matches. */
+    private fun markAndVerify(gestures: List<Tap>, want: Set<Int>, keep: Set<Int>, round: Int): Unit = autoTaps(gestures) {
+        val s = session
+        handler.postDelayed({
+            if (s == session) withBoard(needSolution = false, internal = true) { b, _ ->
+                val (wrong, missing) = MovePlanner.xErrors(b, want, keep)
+                when {
+                    wrong.isEmpty() && missing.isEmpty() -> done("Marked ${want.size} cells")
+                    round >= MAX_FIX_ROUNDS -> done("Marked cells — ${wrong.size + missing.size} still off, tap X again")
+                    else -> {
+                        panel = panel.copy(status = "Fixing ${wrong.size + missing.size} cells…")
+                        markAndVerify(MovePlanner.fix(b, wrong, missing).first, want, keep, round + 1)
+                    }
+                }
+            }
+        }, AUTO_SETTLE_MS)
     }
 
     private fun toggleReveal() {
@@ -341,11 +362,19 @@ class OverlayService : AccessibilityService() {
             }
             is Check.Missing ->
                 if (!first && fixes >= MAX_FIX_ROUNDS) done(FIX_FAIL)
-                else autoTaps(AutoSolver.plan(b, sol!!, settings.order, settings.reverse, settings.answerX)) {
+                else {
+                    // Verify the last round's X drags: clear X's no cat rules out (and the user didn't place), re-mark missed ones.
+                    if (first) answerKeep = (0 until b.n * b.n).filter { b.state[it] == Cell.X }.toSet()
+                    val (wrong, missing) = if (first || !settings.answerX) emptyList<Int>() to emptyList()
+                        else MovePlanner.xErrors(b, MovePlanner.xTargets(b).toSet(), answerKeep)
+                    val (fixTaps, st) = MovePlanner.fix(b, wrong, missing)
+                    val fixed = Board(b.n, b.colL, b.colR, b.rowT, b.rowB, b.region, st)
+                    autoTaps(fixTaps + AutoSolver.plan(fixed, sol!!, settings.order, settings.reverse, settings.answerX)) {
                     val s = session
                     handler.postDelayed({
                         if (s == session) answerStep(if (first) 0 else fixes + 1, first = false)
                     }, AUTO_SETTLE_MS)
+                    }
                 }
         }
     }

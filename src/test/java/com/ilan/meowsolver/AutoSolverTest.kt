@@ -7,6 +7,7 @@ import com.ilan.meowsolver.core.Cell
 import com.ilan.meowsolver.core.Check
 import com.ilan.meowsolver.core.MovePlanner
 import com.ilan.meowsolver.core.Solver
+import com.ilan.meowsolver.core.Tap
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -48,7 +49,12 @@ class AutoSolverTest {
             val sol = Solver.solve(b)!!
             val plan = AutoSolver.plan(b, sol)
             val solCells = sol.mapIndexed { r, c -> r * b.n + c }.toSet()
-            val byCell = plan.groupBy { b.cellOf(it) }
+            val byCell = plan.filter { it.drag.isEmpty() }.groupBy { b.cellOf(it) }
+            // Every drag starts on an empty cell (add mode) and never crosses a solution cell that isn't already X.
+            for (d in plan.filter { it.drag.isNotEmpty() }) {
+                assertTrue("${e.name}: drag starts on non-empty", b.state[b.cellOf(d)] == Cell.EMPTY && b.cellOf(d) !in solCells)
+                for ((x, y) in d.drag) { val c = b.cellOf(Tap(x, y, false, 0)); assertTrue("${e.name}: drag over cat cell $c", c !in solCells || b.state[c] == Cell.X) }
+            }
             for ((cell, taps) in byCell) {
                 val ok = (taps.size == 1 && b.state[cell] == Cell.EMPTY && (taps[0].double == (cell in solCells))) ||
                     (taps.size == 2 && !taps[0].double && taps[1].double && b.state[cell] == Cell.X && cell in solCells)

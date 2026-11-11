@@ -17,7 +17,7 @@ class TapRunner(private val svc: AccessibilityService, private val handler: Hand
         if (i == taps.size) { onDone(true); return }
         try {
             val t = taps[i]
-            val path = Path().apply { moveTo(t.x.toFloat(), t.y.toFloat()) }
+            val path = Path().apply { moveTo(t.x.toFloat(), t.y.toFloat()); for ((x, y) in t.drag) lineTo(x.toFloat(), y.toFloat()) }
             val g = GestureDescription.Builder().apply {
                 for (s in MovePlanner.strokes(t, gap)) addStroke(GestureDescription.StrokeDescription(path, s[0], s[1]))
             }.build()
