@@ -1,3 +1,5 @@
+import java.util.Properties
+
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
@@ -14,15 +16,29 @@ android {
         applicationId = "com.ilan.meowsolver"
         minSdk = 30 // takeScreenshot() needs Android 11+
         targetSdk = 35
-        versionCode = 5
-        versionName = "2.6"
+        versionCode = 6
+        versionName = "2.7"
+    }
+    // Release key lives outside the repo (public): path from MEOW_SIGNING or the shared project folder.
+    // Same key every release so updates install over each other. Missing → debug key (local/test builds).
+    val signingProps = Properties().apply {
+        val f = file(System.getenv("MEOW_SIGNING") ?: "/mnt/project-files/signing/signing.properties")
+        if (f.exists()) f.inputStream().use { load(it) }
+    }
+    signingConfigs {
+        if (!signingProps.isEmpty) create("release") {
+            storeFile = file(signingProps.getProperty("storeFile"))
+            storePassword = signingProps.getProperty("storePassword")
+            keyAlias = signingProps.getProperty("keyAlias")
+            keyPassword = signingProps.getProperty("keyPassword")
+        }
     }
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = signingConfigs.findByName("release") ?: signingConfigs.getByName("debug")
         }
     }
     compileOptions {
