@@ -13,7 +13,7 @@ sealed interface Check {
 object AutoSolver {
     /**
      * Taps for every missing solution cat except one, in the user's cat order (random by default); the last one is held back: the cat, then the cells it rules out.
-     * Planned on a virtual copy of the board so no cell is ever tapped twice (a second tap would clear an X).
+     * Planned on a virtual copy of the board; X's go on as drags that start on an empty cell, so they never clear an X.
      */
     fun plan(
         b: Board, sol: IntArray,
@@ -30,10 +30,9 @@ object AutoSolver {
             out += cat.dropLast(1) + cat.last().copy(pauseAfterMs = MovePlanner.CLEAR_PAUSE_MS)
             state[cell] = Cell.CAT
             if (!withX) continue
-            for (i in MovePlanner.xTargetsFor(b, state, cell)) {
-                out += Tap(b.cx(i % b.n), b.cy(i / b.n), false, MovePlanner.GAP_MS)
-                state[i] = Cell.X
-            }
+            val xs = MovePlanner.xTargetsFor(b, state, cell)
+            out += MovePlanner.xDrags(b, state, xs)
+            xs.forEach { state[it] = Cell.X }
         }
         return out
     }

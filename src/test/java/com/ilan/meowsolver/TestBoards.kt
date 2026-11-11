@@ -34,11 +34,17 @@ val LEVEL81 = arrayOf(
 fun Board.cellOf(t: Tap): Int =
     idx((0 until n).first { t.y in rowT[it]..rowB[it] }, (0 until n).first { t.x in colL[it]..colR[it] })
 
-/** Applies taps with the game's rules: single EMPTY→X, X→EMPTY, CAT→EMPTY; double on EMPTY → CAT (otherwise no change). */
+/** Applies taps with the game's rules: single EMPTY→X, X→EMPTY, CAT→EMPTY; double on EMPTY → CAT (otherwise no change); drags as in [Tap]. */
 fun Board.after(taps: List<Tap>): Board {
     val st = state.copyOf()
     for (t in taps) {
         val i = cellOf(t)
+        if (t.drag.isNotEmpty()) { // drag: mode set by the start cell; cats are left alone
+            val add = st[i] == Cell.EMPTY
+            val cells = listOf(i) + t.drag.map { (x, y) -> cellOf(Tap(x, y, false, 0)) }
+            for (c in cells) if (add && st[c] == Cell.EMPTY) st[c] = Cell.X else if (!add && st[c] == Cell.X) st[c] = Cell.EMPTY
+            continue
+        }
         st[i] = if (t.double) (if (st[i] == Cell.EMPTY) Cell.CAT else st[i])
         else when (st[i]) { Cell.EMPTY -> Cell.X; Cell.X -> Cell.EMPTY; Cell.CAT -> Cell.EMPTY }
     }

@@ -67,9 +67,54 @@ class MovePlannerTest {
         assertEquals(t.toSet().size, t.size)
     }
 
-    @Test fun xTapsAreSingleTaps() {
+    @Test fun xTapsAreOneDragNotDoubleTaps() {
         val b = boardOf("A@ A", "B B")
-        assertEquals(listOf(false, false, false), MovePlanner.xTaps(b).map { it.double })
+        val t = MovePlanner.xTaps(b)
+        assertEquals(1, t.size)
+        assertTrue(t.none { it.double })
+        assertEquals(listOf(Cell.CAT, Cell.X, Cell.X, Cell.X), b.after(t).state.toList())
+    }
+
+    @Test fun fullRowIsOneStraightDrag() {
+        val b = boardOf("A A A A", "B B B B", "C C C C", "D D D D")
+        val t = MovePlanner.xDrags(b, b.state, listOf(4, 5, 6, 7))
+        assertEquals(1, t.size)
+        assertEquals(listOf(50 to 150, 150 to 150, 250 to 150, 350 to 150), listOf(t[0].x to t[0].y) + t[0].drag)
+    }
+
+    @Test fun hollowRingIsOneDrag() {
+        val b = boardOf("A A A A A", "A A A A A", "A A B@ A A", "A A A A A", "A A A A A")
+        val ring = listOf(6, 7, 8, 11, 13, 16, 17, 18)
+        val t = MovePlanner.xDrags(b, b.state, ring)
+        assertEquals(1, t.size)
+        val after = b.after(t)
+        assertEquals(ring, (0 until 25).filter { after.state[it] == Cell.X })
+    }
+
+    @Test fun dragsCrossOldXsButNeverOtherEmptyCells() {
+        val b = boardOf("A A* A A", "B B B B", "C C C C", "D D D D")
+        val t = MovePlanner.xDrags(b, b.state, listOf(0, 2, 3)) // gap at 1 is already X
+        assertEquals(1, t.size)
+        assertEquals(listOf(0, 1, 2, 3), (0 until 16).filter { b.after(t).state[it] == Cell.X })
+        val e = boardOf("A A A A", "B B B B", "C C C C", "D D D D")
+        val split = MovePlanner.xDrags(e, e.state, listOf(0, 2))
+        assertEquals("1 is empty and not a target: two separate taps", 2, split.size)
+    }
+
+    @Test fun verifyFindsAndFixesWrongAndMissedXs() {
+        val b = boardOf("A B@ C D", "E F G H", "I J K L", "M N O P")
+        val want = MovePlanner.xTargets(b).toSet()
+        val keep = setOf(15)
+        // Bad drag: missed cell 0, wrongly marked 10 and 11; user's own X at 15 must stay.
+        val bad = boardOf("A B@ C* D*", "E* F* G* H", "I J* K* L*", "M N* O P*")
+        val (wrong, missing) = MovePlanner.xErrors(bad, want, keep)
+        assertEquals(listOf(10, 11), wrong)
+        assertEquals(listOf(0), missing)
+        val (taps, st) = MovePlanner.fix(bad, wrong, missing)
+        val fixed = bad.after(taps)
+        assertEquals(st.toList(), fixed.state.toList())
+        assertEquals(Pair(emptyList<Int>(), emptyList<Int>()), MovePlanner.xErrors(fixed, want, keep))
+        assertEquals(Cell.X, fixed.state[15])
     }
 
     @Test fun xTargetsForUsesGivenState() {
