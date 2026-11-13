@@ -53,5 +53,5 @@ class UiSnapshotTest {
         overlay = OverlaySettings(order = CatOrder.ROWS, reverse = true, answerX = false, buttons = PanelButton.entries.toSet() - PanelButton.X, quickAction = PanelButton.ANSWER)), dark = false, {}, {}, {}, {}, {}, {}) } }
     @Test fun setupDark() { tall(); paparazzi.snapshot { SetupScreen(SetupState(serviceOn = true, doubleTapMs = 90, themeMode = ThemeMode.DARK), dark = true, {}, {}, {}, {}, {}, {}) } }
     // full screen is scrollable; render tall so the slider section is visible
-    private fun tall() = paparazzi.unsafeUpdateConfig(DeviceConfig.PIXEL_5.copy(screenHeight = 5600))
+    private fun tall() = paparazzi.unsafeUpdateConfig(DeviceConfig.PIXEL_5.copy(screenHeight = 6600))
 }
