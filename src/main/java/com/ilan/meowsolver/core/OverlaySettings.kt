@@ -29,6 +29,8 @@ data class OverlaySettings(
     val order: CatOrder = CatOrder.RANDOM,
     val reverse: Boolean = false,
     val answerX: Boolean = true,
+    /** X button also clears X's on cells where a cat belongs. */
+    val clearWrongX: Boolean = false,
     /** Button the minimized bubble runs on tap (long-press then opens the panel); null = tap opens the panel. */
     val quickAction: PanelButton? = null,
     val layout: PanelLayout = PanelLayout.HORIZONTAL,
@@ -57,6 +59,7 @@ data class OverlaySettings(
         const val K_ORDER = "catOrder"
         const val K_REVERSE = "orderReverse"
         const val K_ANSWER_X = "answerX"
+        const val K_CLEAR_WRONG_X = "clearWrongX"
         const val K_QUICK = "bubbleQuickAction"
         const val K_LAYOUT = "panelLayout"
         const val K_BUTTON_ORDER = "buttonOrder"
@@ -71,7 +74,7 @@ data class OverlaySettings(
 
         fun decode(
             buttons: String?, order: String?, reverse: Boolean, answerX: Boolean, quick: String? = null,
-            layout: String? = null, buttonOrder: String? = null,
+            layout: String? = null, buttonOrder: String? = null, clearWrongX: Boolean = false,
         ): OverlaySettings {
             val set = parseButtons(buttons).toSet()
             return OverlaySettings(
@@ -79,6 +82,7 @@ data class OverlaySettings(
                 order = CatOrder.entries.firstOrNull { it.name == order } ?: CatOrder.RANDOM,
                 reverse = reverse,
                 answerX = answerX,
+                clearWrongX = clearWrongX,
                 quickAction = PanelButton.entries.firstOrNull { it.name == quick },
                 layout = PanelLayout.entries.firstOrNull { it.name == layout } ?: PanelLayout.HORIZONTAL,
                 buttonOrder = decodeOrder(buttonOrder),
@@ -92,6 +96,7 @@ fun SharedPreferences.overlaySettings() = OverlaySettings.decode(
     getBoolean(OverlaySettings.K_REVERSE, false), getBoolean(OverlaySettings.K_ANSWER_X, true),
     getString(OverlaySettings.K_QUICK, null),
     layout = getString(OverlaySettings.K_LAYOUT, null), buttonOrder = getString(OverlaySettings.K_BUTTON_ORDER, null),
+    clearWrongX = getBoolean(OverlaySettings.K_CLEAR_WRONG_X, false),
 )
 
 fun SharedPreferences.Editor.putOverlaySettings(s: OverlaySettings): SharedPreferences.Editor =
@@ -99,3 +104,4 @@ fun SharedPreferences.Editor.putOverlaySettings(s: OverlaySettings): SharedPrefe
         .putBoolean(OverlaySettings.K_REVERSE, s.reverse).putBoolean(OverlaySettings.K_ANSWER_X, s.answerX)
         .putString(OverlaySettings.K_QUICK, s.quickAction?.name)
         .putString(OverlaySettings.K_LAYOUT, s.layout.name).putString(OverlaySettings.K_BUTTON_ORDER, s.buttonOrder.joinToString(",") { it.name })
+        .putBoolean(OverlaySettings.K_CLEAR_WRONG_X, s.clearWrongX)

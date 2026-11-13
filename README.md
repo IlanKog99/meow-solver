@@ -23,7 +23,7 @@ Meowdoku rules: one cat per row, column and colour region; no two cats touch, no
 | Reveal | Rings every remaining solution cell (toggle) |
 | Hint | Shows the next cat for 5 s |
 | Cat | Places the next cat (the hinted one if a hint is showing) |
-| X | Marks every cell the placed cats rule out, by dragging (a row, column or ring around a cat is one swipe), then re-reads the board and fixes any cell marked by mistake (only once a second read agrees, so it never "fixes" a cell that was still animating) |
+| X | From one screen read: marks every cell the placed cats rule out (colour, row, column, 3x3 ring), by dragging. Reports X's sitting on cells where a cat belongs, and clears them when **Remove wrong X's** is on |
 | Answer | Solves the level: places all cats (and X's), re-checks the board, places the last cat. Tap **Stop** to halt |
 
 Minimize to a small bubble; drag the panel by its status text (or the cat grip in grid layouts); power icon closes it.
@@ -33,6 +33,7 @@ Minimize to a small bubble; drag the panel by its status text (or the cat grip i
 - **Overlay layout** — Row · Column · 2 wide · 3 wide, plus **Edit button order** (drag the buttons, then Save).
 - **Cat order** — Random · Rows · Columns, plus Reverse (top→bottom, bottom→top, left→right, right→left). Used by Hint, Cat and Answer.
 - **Answer places** — Cats + X's, or Cats only.
+- **X button → Remove wrong X's** — X also clears X's on cells where a cat belongs (off by default).
 - **Appearance** — System · Light · Dark.
 - **Double-tap speed** — raise it if Cat places an X instead of a cat.
 
