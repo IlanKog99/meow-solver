@@ -4,8 +4,10 @@ import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color as AndroidColor
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
@@ -16,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
+import com.ilan.meowsolver.core.DebugLog
 import com.ilan.meowsolver.core.MovePlanner
 import com.ilan.meowsolver.core.OverlaySettings
 import com.ilan.meowsolver.core.overlaySettings
@@ -33,6 +36,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        DebugLog.init(filesDir)
         val prefs = getSharedPreferences(OverlayService.PREFS, MODE_PRIVATE)
         doubleTapMs = prefs.getInt(OverlayService.K_DOUBLE_MS, MovePlanner.GAP_MS.toInt())
         themeMode = ThemeMode.fromPref(prefs.getString(ThemeMode.PREF_KEY, null))
@@ -56,6 +60,8 @@ class MainActivity : ComponentActivity() {
                 onDoubleTapMs = { doubleTapMs = it; prefs.edit().putInt(OverlayService.K_DOUBLE_MS, it).apply() },
                 onThemeMode = { themeMode = it; prefs.edit().putString(ThemeMode.PREF_KEY, it.name).apply() },
                 onOverlay = { overlay = it; prefs.edit().putOverlaySettings(it).apply() },
+                onSendLogs = ::sendLogs,
+                onClearLogs = { DebugLog.clear(); Toast.makeText(this, "Logs cleared", Toast.LENGTH_SHORT).show() },
             )
         }
     }
@@ -69,6 +75,20 @@ class MainActivity : ComponentActivity() {
         val bar = if (dark) SystemBarStyle.dark(AndroidColor.TRANSPARENT)
                   else SystemBarStyle.light(AndroidColor.TRANSPARENT, AndroidColor.TRANSPARENT)
         enableEdgeToEdge(statusBarStyle = bar, navigationBarStyle = bar)
+    }
+
+    /** Shares the log as plain text (any app: Gmail, WhatsApp, Drive, copy). A header says what device/app it came from. */
+    private fun sendLogs() {
+        val v = packageManager.getPackageInfo(packageName, 0)
+        val head = "Meow Solver ${v.versionName} (${v.longVersionCode}) · ${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE} (SDK ${Build.VERSION.SDK_INT})\n" +
+            "Overlay on: ${OverlayService.instance != null} · Settings: $overlay, doubleTapMs=$doubleTapMs\n\n"
+        // Intents go through Binder (~1MB shared): send the newest ~150k chars at most.
+        val body = DebugLog.text().ifEmpty { "(log is empty)" }.takeLast(150_000)
+        val send = Intent(Intent.ACTION_SEND).setType("text/plain")
+            .putExtra(Intent.EXTRA_SUBJECT, "Meow Solver debug log")
+            .putExtra(Intent.EXTRA_TEXT, head + body)
+        try { startActivity(Intent.createChooser(send, "Send debug log")) }
+        catch (e: Exception) { DebugLog.error("Send logs failed", e); Toast.makeText(this, "Couldn't open share", Toast.LENGTH_SHORT).show() }
     }
 
     private fun openAccessibility() = startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))

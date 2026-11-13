@@ -33,6 +33,7 @@ import com.ilan.meowsolver.core.BoardNotFound
 import com.ilan.meowsolver.core.BoardReader
 import com.ilan.meowsolver.core.Cell
 import com.ilan.meowsolver.core.Check
+import com.ilan.meowsolver.core.DebugLog
 import com.ilan.meowsolver.core.MovePlanner
 import com.ilan.meowsolver.core.OverlaySettings
 import com.ilan.meowsolver.core.PanelButton
@@ -103,11 +104,14 @@ class OverlayService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        DebugLog.init(filesDir)
+        DebugLog.log("Overlay service connected")
         wm = getSystemService(WindowManager::class.java)
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         taps = TapRunner(this, handler)
         panel = panel.copy(revealOn = prefs.getBoolean(K_REVEAL, false))
         prefs.registerOnSharedPreferenceChangeListener(prefListener); applySettings()
+        DebugLog.log("Settings: $settings, doubleTapMs=${prefs.getInt(K_DOUBLE_MS, MovePlanner.GAP_MS.toInt())}")
         owner = OverlayOwner().also { it.start() }
         instance = this
         showOverlay()
@@ -249,8 +253,8 @@ class OverlayService : AccessibilityService() {
     private fun PanelHost() {
         when (mode) {
             Mode.CARD -> PanelCard(
-                panel, onReveal = ::toggleReveal, onHint = ::hint, onCat = ::placeCat, onX = ::markX,
-                onAnswer = ::answer, onMinimize = { if (!panel.autoRunning) { mode = Mode.BUBBLE; settle() } }, onClose = ::close,
+                panel, onReveal = pressed("Reveal", ::toggleReveal), onHint = pressed("Hint", ::hint), onCat = pressed("Cat", ::placeCat),
+                onX = pressed("X", ::markX), onAnswer = pressed("Answer", ::answer), onMinimize = { if (!panel.autoRunning) { mode = Mode.BUBBLE; settle() } }, onClose = ::close,
                 dragModifier = Modifier.pointerInteropFilter { dragTouch(it, null) }, // applied to the status text only
             )
             Mode.BUBBLE -> {
@@ -270,7 +274,13 @@ class OverlayService : AccessibilityService() {
 
     // ---------- actions ----------
 
-    private fun runQuick(b: PanelButton) = when (b) {
+    /** Logs every button press with the state it hit, so a shared log shows what the user did. */
+    private fun pressed(name: String, action: () -> Unit): () -> Unit = {
+        DebugLog.log("Pressed $name (busy=${panel.busy}, running=${panel.autoRunning})")
+        action()
+    }
+
+    private fun runQuick(b: PanelButton) = when (b.also { DebugLog.log("Bubble quick action: $it") }) {
         PanelButton.REVEAL -> toggleReveal()
         PanelButton.HINT -> hint()
         PanelButton.CAT -> placeCat()
@@ -397,11 +407,13 @@ class OverlayService : AccessibilityService() {
     /** Runs taps without ending the busy state; Stop stays tappable unless a tap would land on the panel. */
     private fun autoTaps(list: List<Tap>, next: () -> Unit) {
         val s = session
+        DebugLog.log("Running ${list.size} gestures")
         setPanelTouchable(!tapsHitPanel(list))
         taps.run(list, prefs.getInt(K_DOUBLE_MS, MovePlanner.GAP_MS.toInt()).toLong(), cancelled = { s != session }) { ok ->
             if (s != session) return@run
             setPanelTouchable(true)
-            if (!ok) { stoppedAt = SystemClock.uptimeMillis(); done("Stopped") } else try { next() } catch (_: Exception) { done(READ_FAIL) }
+            if (!ok) { DebugLog.log("Gestures cancelled"); stoppedAt = SystemClock.uptimeMillis(); done("Stopped") }
+            else try { next() } catch (e: Exception) { DebugLog.error("Step after gestures failed", e); done(READ_FAIL) }
         }
     }
 
@@ -416,6 +428,7 @@ class OverlayService : AccessibilityService() {
     // ---------- plumbing ----------
 
     private fun done(msg: String) {
+        DebugLog.log("Result: $msg")
         panel = panel.copy(status = msg, busy = false, autoRunning = false)
         // Bubble hides the status line, so a quick action's result would be silent.
         if (mode == Mode.BUBBLE && panelView != null) Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
@@ -424,11 +437,12 @@ class OverlayService : AccessibilityService() {
     private fun runTaps(list: List<Tap>, success: () -> String) {
         val s = session
         panel = panel.copy(status = "Working…")
+        DebugLog.log("Running ${list.size} gestures")
         setPanelTouchable(false)
         taps.run(list, prefs.getInt(K_DOUBLE_MS, MovePlanner.GAP_MS.toInt()).toLong(), cancelled = { s != session }) { ok ->
             if (s != session) return@run
             setPanelTouchable(true)
-            done(if (!ok) "Stopped" else try { success() } catch (_: Exception) { READ_FAIL })
+            done(if (!ok) "Stopped" else try { success() } catch (e: Exception) { DebugLog.error("After gestures failed", e); READ_FAIL })
         }
     }
 
@@ -443,6 +457,7 @@ class OverlayService : AccessibilityService() {
 
     private fun handleBoard(b: Board, needSolution: Boolean, action: (Board, IntArray?) -> Unit) {
         val sol = if (needSolution || panel.revealOn) Solver.solve(b) else null
+        DebugLog.log("Board ${b.n}x${b.n}, ${b.cats.size} cats, solution=${if (sol == null) "none" else "found"}\n${DebugLog.describe(b)}")
         marks = marks.copy(board = b,
             rings = if (panel.revealOn) sol?.let { MovePlanner.remaining(b, it) } ?: emptyList() else marks.rings)
         action(b, sol)
@@ -461,8 +476,8 @@ class OverlayService : AccessibilityService() {
                         px = IntArray(w * h).also { bmp.getPixels(it, 0, w, 0, 0, w, h) }
                         bmp.recycle()
                     }
-                } catch (_: Exception) {
-                } catch (_: OutOfMemoryError) {
+                } catch (e: Exception) { DebugLog.error("Screenshot copy failed", e)
+                } catch (e: OutOfMemoryError) { DebugLog.error("Screenshot copy out of memory", e)
                 } finally { res.hardwareBuffer.close() }
                 if (s != session) return
                 setOverlayVisible(true)
@@ -470,24 +485,27 @@ class OverlayService : AccessibilityService() {
                 try {
                     handleBoard(BoardReader.read(px, w, h), needSolution, action)
                 } catch (_: BoardNotFound) {
+                    DebugLog.log("Board not found in ${w}x$h screenshot")
                     marks = Marks()
                     done(if (panel.autoRunning) "Stopped — board not found" else "Open a Meowdoku puzzle first")
-                } catch (_: Exception) {
-                    setPanelTouchable(true); done(READ_FAIL)
-                } catch (_: OutOfMemoryError) {
-                    setPanelTouchable(true); done(READ_FAIL)
+                } catch (e: Exception) {
+                    DebugLog.error("Board read failed", e); setPanelTouchable(true); done(READ_FAIL)
+                } catch (e: OutOfMemoryError) {
+                    DebugLog.error("Board read out of memory", e); setPanelTouchable(true); done(READ_FAIL)
                 }
             }
 
             override fun onFailure(errorCode: Int) {
                 if (s != session) return
+                DebugLog.log("Screenshot failed, code $errorCode, retry=$retry")
                 if (retry) {
                     val delay = if (errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) THROTTLE_RETRY_MS else RETRY_MS
                     handler.postDelayed({ if (s == session) capture(s, false, needSolution, action) }, delay)
                 }
                 else { setOverlayVisible(true); done(READ_FAIL) }
             }
-        }) } catch (_: Exception) {
+        }) } catch (e: Exception) {
+            DebugLog.error("takeScreenshot threw", e)
             if (s == session) { setOverlayVisible(true); setPanelTouchable(true); done(READ_FAIL) }
         }
     }
