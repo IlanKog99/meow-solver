@@ -16,8 +16,8 @@ android {
         applicationId = "com.ilan.meowsolver"
         minSdk = 30 // takeScreenshot() needs Android 11+
         targetSdk = 35
-        versionCode = 7
-        versionName = "2.8"
+        versionCode = 8
+        versionName = "2.9"
     }
     // Release key lives outside the repo (public): path from MEOW_SIGNING or the shared project folder.
     // Same key every release so updates install over each other. Missing → debug key (local/test builds).

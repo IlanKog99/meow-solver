@@ -72,6 +72,7 @@ fun SetupScreen(
     onStart: () -> Unit, onAppInfo: () -> Unit, onAccessibility: () -> Unit, onDoubleTapMs: (Int) -> Unit,
     onThemeMode: (ThemeMode) -> Unit,
     onOverlay: (OverlaySettings) -> Unit,
+    onSendLogs: () -> Unit = {}, onClearLogs: () -> Unit = {},
 ) {
     val c = if (dark) SetupColors.Dark else SetupColors.Light
     CompositionLocalProvider(LocalSetupColors provides c) {
@@ -159,6 +160,11 @@ fun SetupScreen(
                 Segmented(listOf("Cats + X's", "Cats only"), if (o.answerX) 0 else 1) { onOverlay(o.copy(answerX = it == 0)) }
             }
 
+            SectionTitle("X button")
+            Card {
+                SwitchRow("Remove wrong X's", "Clears X's on cells where a cat belongs", o.clearWrongX) { onOverlay(o.copy(clearWrongX = it)) }
+            }
+
             SectionTitle("Appearance")
             Card {
                 Segmented(ThemeMode.entries.map { it.label }, state.themeMode.ordinal) { onThemeMode(ThemeMode.entries[it]) }
@@ -176,6 +182,20 @@ fun SetupScreen(
                     ),
                 )
                 Text("Raise it if Cat places an X instead.", color = c.inkMuted, fontSize = 13.sp)
+            }
+
+            SectionTitle("Debug logs")
+            Card {
+                Text("Something went wrong? Send the log to get it fixed. It records button presses, board reads and errors.", color = c.inkMuted, fontSize = 13.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(
+                        onClick = onSendLogs, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = Meow.Clay, contentColor = Color.White),
+                    ) { Text("Send logs", fontSize = 14.sp) }
+                    OutlinedButton(onClick = onClearLogs, shape = RoundedCornerShape(12.dp), modifier = Modifier.weight(1f)) {
+                        Text("Clear", color = c.ink, fontSize = 14.sp)
+                    }
+                }
             }
         }
     }

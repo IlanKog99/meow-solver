@@ -32,7 +32,7 @@ import com.ilan.meowsolver.core.Board
 import com.ilan.meowsolver.core.BoardNotFound
 import com.ilan.meowsolver.core.BoardReader
 import com.ilan.meowsolver.core.Cell
-import com.ilan.meowsolver.core.Check
+import com.ilan.meowsolver.core.DebugLog
 import com.ilan.meowsolver.core.MovePlanner
 import com.ilan.meowsolver.core.OverlaySettings
 import com.ilan.meowsolver.core.PanelButton
@@ -64,7 +64,6 @@ class OverlayService : AccessibilityService() {
         private const val AUTO_SETTLE_MS = 400L // let the game animate before re-reading
         private const val STOP_GUARD_MS = 1000L // covers a slow press on Stop (cancel fires on finger-down, click on finger-up)
         private const val MAX_FIX_ROUNDS = 3
-        private const val FIX_FAIL = "Couldn't place all cats — tap Answer again"
         private const val NO_SOLUTION = "No solution — a placed cat is wrong"
         private const val READ_FAIL = "Couldn't read the screen. Try again"
         private const val UNSTABLE = "Board keeps changing — tap again"
@@ -103,11 +102,14 @@ class OverlayService : AccessibilityService() {
     }
 
     override fun onServiceConnected() {
+        DebugLog.init(filesDir)
+        DebugLog.log("Overlay service connected")
         wm = getSystemService(WindowManager::class.java)
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE)
         taps = TapRunner(this, handler)
         panel = panel.copy(revealOn = prefs.getBoolean(K_REVEAL, false))
         prefs.registerOnSharedPreferenceChangeListener(prefListener); applySettings()
+        DebugLog.log("Settings: $settings, doubleTapMs=${prefs.getInt(K_DOUBLE_MS, MovePlanner.GAP_MS.toInt())}")
         owner = OverlayOwner().also { it.start() }
         instance = this
         showOverlay()
@@ -249,8 +251,8 @@ class OverlayService : AccessibilityService() {
     private fun PanelHost() {
         when (mode) {
             Mode.CARD -> PanelCard(
-                panel, onReveal = ::toggleReveal, onHint = ::hint, onCat = ::placeCat, onX = ::markX,
-                onAnswer = ::answer, onMinimize = { if (!panel.autoRunning) { mode = Mode.BUBBLE; settle() } }, onClose = ::close,
+                panel, onReveal = pressed("Reveal", ::toggleReveal), onHint = pressed("Hint", ::hint), onCat = pressed("Cat", ::placeCat),
+                onX = pressed("X", ::markX), onAnswer = pressed("Answer", ::answer), onMinimize = { if (!panel.autoRunning) { mode = Mode.BUBBLE; settle() } }, onClose = ::close,
                 dragModifier = Modifier.pointerInteropFilter { dragTouch(it, null) }, // applied to the status text only
             )
             Mode.BUBBLE -> {
@@ -270,7 +272,13 @@ class OverlayService : AccessibilityService() {
 
     // ---------- actions ----------
 
-    private fun runQuick(b: PanelButton) = when (b) {
+    /** Logs every button press with the state it hit, so a shared log shows what the user did. */
+    private fun pressed(name: String, action: () -> Unit): () -> Unit = {
+        DebugLog.log("Pressed $name (busy=${panel.busy}, running=${panel.autoRunning})")
+        action()
+    }
+
+    private fun runQuick(b: PanelButton) = when (b.also { DebugLog.log("Bubble quick action: $it") }) {
         PanelButton.REVEAL -> toggleReveal()
         PanelButton.HINT -> hint()
         PanelButton.CAT -> placeCat()
@@ -297,31 +305,27 @@ class OverlayService : AccessibilityService() {
         }
     }
 
-    private fun markX(): Unit = withBoard(needSolution = false) { b, _ ->
-        val want = MovePlanner.xTargets(b).toSet()
-        if (want.isEmpty()) return@withBoard done("Nothing to mark")
-        panel = panel.copy(status = "Marking…")
-        markAndVerify(MovePlanner.xTaps(b), want, keep = (0 until b.n * b.n).filter { b.state[it] == Cell.X }.toSet(), round = 0)
+    private fun markX(): Unit = withBoard { b, sol ->
+        val wrong = sol?.let { MovePlanner.wrongXs(b, it) } ?: emptyList()
+        // Clearing a cell that is really EMPTY (X misread mid-animation) would mark it instead: confirm with a second read first.
+        if (settings.clearWrongX && wrong.isNotEmpty()) confirmRead(b, needSolution = true) { b2, sol2 -> runX(b2, sol2) }
+        else runX(b, sol)
     }
 
-    /** Drags, re-reads, then clears X's marked by mistake and re-marks missed cells until the board matches. */
-    private fun markAndVerify(gestures: List<Tap>, want: Set<Int>, keep: Set<Int>, round: Int): Unit = autoTaps(gestures) {
-        settleThen(needSolution = false) { b, _ -> verifyX(b, want, keep, round, confirmed = false) }
+    private fun runX(b: Board, sol: IntArray?) {
+        val wrong = sol?.let { MovePlanner.wrongXs(b, it) } ?: emptyList()
+        val clear = settings.clearWrongX && wrong.isNotEmpty()
+        val marked = MovePlanner.xTargets(b).size
+        val note = listOfNotNull(
+            "Marked $marked cells".takeIf { marked > 0 },
+            if (clear) "cleared ${wrong.size} wrong X's" else wrong.takeIf { it.isNotEmpty() }?.let { wrongNote(it.size) },
+            "a placed cat is wrong".takeIf { sol == null && b.cats.isNotEmpty() },
+        ).joinToString(" · ")
+        if (marked == 0 && !clear) return done(note.ifEmpty { "Nothing to mark" })
+        runTaps(MovePlanner.xButtonTaps(b, wrong, settings.clearWrongX)) { note }
     }
 
-    private fun verifyX(b: Board, want: Set<Int>, keep: Set<Int>, round: Int, confirmed: Boolean) {
-        val (wrong, missing) = MovePlanner.xErrors(b, want, keep)
-        when {
-            wrong.isEmpty() && missing.isEmpty() -> done("Marked ${want.size} cells")
-            // Every fix gesture toggles, so acting on a misread cell creates the very mistake it meant to fix.
-            !confirmed -> confirmRead(b, needSolution = false) { b2, _ -> verifyX(b2, want, keep, round, confirmed = true) }
-            round >= MAX_FIX_ROUNDS -> done("Marked cells — ${wrong.size + missing.size} still off, tap X again")
-            else -> {
-                panel = panel.copy(status = "Fixing ${wrong.size + missing.size} cells…")
-                markAndVerify(MovePlanner.fix(b, wrong, missing).first, want, keep, round + 1)
-            }
-        }
-    }
+    private fun wrongNote(k: Int) = "$k X's on cat cells"
 
     /** Waits for the game to animate, then reads the board. */
     private fun settleThen(needSolution: Boolean, action: (Board, IntArray?) -> Unit) {
@@ -360,7 +364,7 @@ class OverlayService : AccessibilityService() {
         if (panel.autoRunning) { stopAnswer(); return }
         if (panel.busy || SystemClock.uptimeMillis() - stoppedAt < STOP_GUARD_MS) return
         panel = panel.copy(busy = true, autoRunning = true, status = "Placing cats…")
-        answerStep(fixes = 0, first = true)
+        answerRun()
     }
 
     private fun stopAnswer() {
@@ -370,38 +374,28 @@ class OverlayService : AccessibilityService() {
         done("Stopped")
     }
 
-    /** One read → check → act round. First round plans everything but the last cat; later rounds fix or finish. */
-    private fun answerStep(fixes: Int, first: Boolean): Unit =
-        if (first) withBoard(internal = true) { b, sol -> answerAct(b, sol, fixes, true, confirmed = true) }
-        else settleThen(needSolution = true) { b, sol -> answerAct(b, sol, fixes, false, confirmed = false) }
-
-    private fun answerAct(b: Board, sol: IntArray?, fixes: Int, first: Boolean, confirmed: Boolean) {
-        panel = panel.copy(status = "Placing cats… ${b.cats.size}/${b.n}")
-        when (val c = AutoSolver.check(b, sol)) {
-            Check.Solved -> done("Solved")
-            Check.NoSolution -> done(NO_SOLUTION)
-            is Check.LastOnly -> autoTaps(AutoSolver.lastCatTaps(b, c.cell)) {
-                marks = marks.copy(rings = marks.rings - c.cell, hint = marks.hint.takeIf { it != c.cell })
-                done("Solved")
-            }
-            is Check.Missing ->
-                if (!first && fixes >= MAX_FIX_ROUNDS) done(FIX_FAIL)
-                // A missed cat or X may just be mid-animation: only re-tap what a second read also shows.
-                else if (!confirmed) confirmRead(b, needSolution = true) { b2, sol2 -> answerAct(b2, sol2, fixes, false, confirmed = true) }
-                else autoTaps(AutoSolver.replan(b, sol!!, first, settings.order, settings.reverse, settings.answerX)) {
-                    answerStep(if (first) 0 else fixes + 1, first = false)
-                }
+    /** One read, then every missing cat (X's after all but the last) in a single run. The game rejects a wrong cat, so no re-check. */
+    private fun answerRun() = withBoard(internal = true) { b, sol ->
+        sol ?: return@withBoard done(NO_SOLUTION)
+        val todo = MovePlanner.remaining(b, sol)
+        if (todo.isEmpty()) return@withBoard done("Solved")
+        panel = panel.copy(status = "Placing ${todo.size} cats…")
+        autoTaps(AutoSolver.plan(b, sol, settings.order, settings.reverse, settings.answerX)) {
+            marks = marks.copy(rings = marks.rings - todo.toSet(), hint = marks.hint.takeIf { it !in todo })
+            done("Placed ${todo.size} cats")
         }
     }
 
     /** Runs taps without ending the busy state; Stop stays tappable unless a tap would land on the panel. */
     private fun autoTaps(list: List<Tap>, next: () -> Unit) {
         val s = session
+        DebugLog.log("Running ${list.size} gestures")
         setPanelTouchable(!tapsHitPanel(list))
         taps.run(list, prefs.getInt(K_DOUBLE_MS, MovePlanner.GAP_MS.toInt()).toLong(), cancelled = { s != session }) { ok ->
             if (s != session) return@run
             setPanelTouchable(true)
-            if (!ok) { stoppedAt = SystemClock.uptimeMillis(); done("Stopped") } else try { next() } catch (_: Exception) { done(READ_FAIL) }
+            if (!ok) { DebugLog.log("Gestures cancelled"); stoppedAt = SystemClock.uptimeMillis(); done("Stopped") }
+            else try { next() } catch (e: Exception) { DebugLog.error("Step after gestures failed", e); done(READ_FAIL) }
         }
     }
 
@@ -416,6 +410,7 @@ class OverlayService : AccessibilityService() {
     // ---------- plumbing ----------
 
     private fun done(msg: String) {
+        DebugLog.log("Result: $msg")
         panel = panel.copy(status = msg, busy = false, autoRunning = false)
         // Bubble hides the status line, so a quick action's result would be silent.
         if (mode == Mode.BUBBLE && panelView != null) Toast.makeText(this, msg, Toast.LENGTH_SHORT).show()
@@ -424,11 +419,12 @@ class OverlayService : AccessibilityService() {
     private fun runTaps(list: List<Tap>, success: () -> String) {
         val s = session
         panel = panel.copy(status = "Working…")
+        DebugLog.log("Running ${list.size} gestures")
         setPanelTouchable(false)
         taps.run(list, prefs.getInt(K_DOUBLE_MS, MovePlanner.GAP_MS.toInt()).toLong(), cancelled = { s != session }) { ok ->
             if (s != session) return@run
             setPanelTouchable(true)
-            done(if (!ok) "Stopped" else try { success() } catch (_: Exception) { READ_FAIL })
+            done(if (!ok) "Stopped" else try { success() } catch (e: Exception) { DebugLog.error("After gestures failed", e); READ_FAIL })
         }
     }
 
@@ -443,6 +439,7 @@ class OverlayService : AccessibilityService() {
 
     private fun handleBoard(b: Board, needSolution: Boolean, action: (Board, IntArray?) -> Unit) {
         val sol = if (needSolution || panel.revealOn) Solver.solve(b) else null
+        DebugLog.log("Board ${b.n}x${b.n}, ${b.cats.size} cats, solution=${if (sol == null) "none" else "found"}\n${DebugLog.describe(b)}")
         marks = marks.copy(board = b,
             rings = if (panel.revealOn) sol?.let { MovePlanner.remaining(b, it) } ?: emptyList() else marks.rings)
         action(b, sol)
@@ -461,8 +458,8 @@ class OverlayService : AccessibilityService() {
                         px = IntArray(w * h).also { bmp.getPixels(it, 0, w, 0, 0, w, h) }
                         bmp.recycle()
                     }
-                } catch (_: Exception) {
-                } catch (_: OutOfMemoryError) {
+                } catch (e: Exception) { DebugLog.error("Screenshot copy failed", e)
+                } catch (e: OutOfMemoryError) { DebugLog.error("Screenshot copy out of memory", e)
                 } finally { res.hardwareBuffer.close() }
                 if (s != session) return
                 setOverlayVisible(true)
@@ -470,24 +467,27 @@ class OverlayService : AccessibilityService() {
                 try {
                     handleBoard(BoardReader.read(px, w, h), needSolution, action)
                 } catch (_: BoardNotFound) {
+                    DebugLog.log("Board not found in ${w}x$h screenshot")
                     marks = Marks()
                     done(if (panel.autoRunning) "Stopped — board not found" else "Open a Meowdoku puzzle first")
-                } catch (_: Exception) {
-                    setPanelTouchable(true); done(READ_FAIL)
-                } catch (_: OutOfMemoryError) {
-                    setPanelTouchable(true); done(READ_FAIL)
+                } catch (e: Exception) {
+                    DebugLog.error("Board read failed", e); setPanelTouchable(true); done(READ_FAIL)
+                } catch (e: OutOfMemoryError) {
+                    DebugLog.error("Board read out of memory", e); setPanelTouchable(true); done(READ_FAIL)
                 }
             }
 
             override fun onFailure(errorCode: Int) {
                 if (s != session) return
+                DebugLog.log("Screenshot failed, code $errorCode, retry=$retry")
                 if (retry) {
                     val delay = if (errorCode == AccessibilityService.ERROR_TAKE_SCREENSHOT_INTERVAL_TIME_SHORT) THROTTLE_RETRY_MS else RETRY_MS
                     handler.postDelayed({ if (s == session) capture(s, false, needSolution, action) }, delay)
                 }
                 else { setOverlayVisible(true); done(READ_FAIL) }
             }
-        }) } catch (_: Exception) {
+        }) } catch (e: Exception) {
+            DebugLog.error("takeScreenshot threw", e)
             if (s == session) { setOverlayVisible(true); setPanelTouchable(true); done(READ_FAIL) }
         }
     }

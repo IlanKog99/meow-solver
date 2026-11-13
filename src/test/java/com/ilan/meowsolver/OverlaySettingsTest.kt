@@ -4,6 +4,8 @@ import com.ilan.meowsolver.core.CatOrder
 import com.ilan.meowsolver.core.OverlaySettings
 import com.ilan.meowsolver.core.PanelButton
 import com.ilan.meowsolver.core.PanelLayout
+import com.ilan.meowsolver.core.overlaySettings
+import com.ilan.meowsolver.core.putOverlaySettings
 import com.ilan.meowsolver.core.PanelButton.*
 import org.junit.Assert.assertEquals
 import org.junit.Test
@@ -72,5 +74,52 @@ class OverlaySettingsTest {
         for (l in PanelLayout.entries) for (i in 0..4) { val (r, c) = l.cellOf(i); assertEquals(i, l.indexAt(r, c, 5)) }
         assertEquals(0, PanelLayout.GRID_2.indexAt(0, 0, 5)) // handle cell → first slot
         assertEquals(4, PanelLayout.VERTICAL.indexAt(9, 3, 5)) // past the end → last slot
+    }
+}
+
+class ClearWrongXSettingTest {
+    /** Minimal in-memory SharedPreferences (only what overlaySettings/putOverlaySettings use). */
+    private class MemPrefs : android.content.SharedPreferences {
+        val m = HashMap<String, Any?>()
+        override fun getAll() = m
+        override fun getString(k: String, d: String?) = if (m.containsKey(k)) m[k] as String? else d
+        override fun getStringSet(k: String, d: MutableSet<String>?) = d
+        override fun getInt(k: String, d: Int) = m[k] as Int? ?: d
+        override fun getLong(k: String, d: Long) = m[k] as Long? ?: d
+        override fun getFloat(k: String, d: Float) = m[k] as Float? ?: d
+        override fun getBoolean(k: String, d: Boolean) = m[k] as Boolean? ?: d
+        override fun contains(k: String) = m.containsKey(k)
+        override fun registerOnSharedPreferenceChangeListener(l: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+        override fun unregisterOnSharedPreferenceChangeListener(l: android.content.SharedPreferences.OnSharedPreferenceChangeListener?) {}
+        override fun edit(): android.content.SharedPreferences.Editor = object : android.content.SharedPreferences.Editor {
+            override fun putString(k: String, v: String?) = apply { m[k] = v }
+            override fun putStringSet(k: String, v: MutableSet<String>?) = apply { m[k] = v }
+            override fun putInt(k: String, v: Int) = apply { m[k] = v }
+            override fun putLong(k: String, v: Long) = apply { m[k] = v }
+            override fun putFloat(k: String, v: Float) = apply { m[k] = v }
+            override fun putBoolean(k: String, v: Boolean) = apply { m[k] = v }
+            override fun remove(k: String) = apply { m.remove(k) }
+            override fun clear() = apply { m.clear() }
+            override fun commit() = true
+            override fun apply() {}
+        }
+    }
+
+    @Test fun defaultsOff() {
+        assertEquals(false, OverlaySettings().clearWrongX)
+        assertEquals(false, OverlaySettings.decode(null, null, false, true).clearWrongX)
+        assertEquals(false, MemPrefs().overlaySettings().clearWrongX)
+    }
+
+    @Test fun decodeHonoursFlag() = assertEquals(true, OverlaySettings.decode(null, null, false, true, clearWrongX = true).clearWrongX)
+
+    @Test fun prefsRoundTrip() {
+        for (v in listOf(true, false)) {
+            val p = MemPrefs()
+            val s = OverlaySettings(clearWrongX = v)
+            p.edit().putOverlaySettings(s).apply()
+            assertEquals(v, p.m[OverlaySettings.K_CLEAR_WRONG_X])
+            assertEquals(s, p.overlaySettings())
+        }
     }
 }
