@@ -297,31 +297,21 @@ class OverlayService : AccessibilityService() {
         }
     }
 
-    private fun markX(): Unit = withBoard(needSolution = false) { b, _ ->
-        val want = MovePlanner.xTargets(b).toSet()
-        if (want.isEmpty()) return@withBoard done("Nothing to mark")
-        panel = panel.copy(status = "Marking…")
-        markAndVerify(MovePlanner.xTaps(b), want, keep = (0 until b.n * b.n).filter { b.state[it] == Cell.X }.toSet(), round = 0)
-    }
-
-    /** Drags, re-reads, then clears X's marked by mistake and re-marks missed cells until the board matches. */
-    private fun markAndVerify(gestures: List<Tap>, want: Set<Int>, keep: Set<Int>, round: Int): Unit = autoTaps(gestures) {
-        settleThen(needSolution = false) { b, _ -> verifyX(b, want, keep, round, confirmed = false) }
-    }
-
-    private fun verifyX(b: Board, want: Set<Int>, keep: Set<Int>, round: Int, confirmed: Boolean) {
-        val (wrong, missing) = MovePlanner.xErrors(b, want, keep)
-        when {
-            wrong.isEmpty() && missing.isEmpty() -> done("Marked ${want.size} cells")
-            // Every fix gesture toggles, so acting on a misread cell creates the very mistake it meant to fix.
-            !confirmed -> confirmRead(b, needSolution = false) { b2, _ -> verifyX(b2, want, keep, round, confirmed = true) }
-            round >= MAX_FIX_ROUNDS -> done("Marked cells — ${wrong.size + missing.size} still off, tap X again")
-            else -> {
-                panel = panel.copy(status = "Fixing ${wrong.size + missing.size} cells…")
-                markAndVerify(MovePlanner.fix(b, wrong, missing).first, want, keep, round + 1)
-            }
+    private fun markX(): Unit = withBoard { b, sol ->
+        val wrong = sol?.let { MovePlanner.wrongXs(b, it) } ?: emptyList()
+        val clear = settings.clearWrongX && wrong.isNotEmpty()
+        val marked = MovePlanner.xTargets(b).size
+        if (marked == 0 && !clear) return@withBoard done(if (wrong.isEmpty()) "Nothing to mark" else wrongNote(wrong.size))
+        runTaps(MovePlanner.xButtonTaps(b, wrong, settings.clearWrongX)) {
+            listOfNotNull(
+                "Marked $marked cells".takeIf { marked > 0 },
+                if (clear) "cleared ${wrong.size} wrong X's" else wrong.takeIf { it.isNotEmpty() }?.let { wrongNote(it.size) },
+                "a placed cat is wrong".takeIf { sol == null && b.cats.isNotEmpty() },
+            ).joinToString(" · ")
         }
     }
+
+    private fun wrongNote(k: Int) = "$k X's on cat cells"
 
     /** Waits for the game to animate, then reads the board. */
     private fun settleThen(needSolution: Boolean, action: (Board, IntArray?) -> Unit) {

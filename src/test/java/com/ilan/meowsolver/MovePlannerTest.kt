@@ -101,22 +101,6 @@ class MovePlannerTest {
         assertEquals("1 is empty and not a target: two separate taps", 2, split.size)
     }
 
-    @Test fun verifyFindsAndFixesWrongAndMissedXs() {
-        val b = boardOf("A B@ C D", "E F G H", "I J K L", "M N O P")
-        val want = MovePlanner.xTargets(b).toSet()
-        val keep = setOf(15)
-        // Bad drag: missed cell 0, wrongly marked 10 and 11; user's own X at 15 must stay.
-        val bad = boardOf("A B@ C* D*", "E* F* G* H", "I J* K* L*", "M N* O P*")
-        val (wrong, missing) = MovePlanner.xErrors(bad, want, keep)
-        assertEquals(listOf(10, 11), wrong)
-        assertEquals(listOf(0), missing)
-        val (taps, st) = MovePlanner.fix(bad, wrong, missing)
-        val fixed = bad.after(taps)
-        assertEquals(st.toList(), fixed.state.toList())
-        assertEquals(Pair(emptyList<Int>(), emptyList<Int>()), MovePlanner.xErrors(fixed, want, keep))
-        assertEquals(Cell.X, fixed.state[15])
-    }
-
     @Test fun xTargetsForUsesGivenState() {
         val b = boardOf(
             "A A B B B",

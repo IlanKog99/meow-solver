@@ -159,6 +159,11 @@ fun SetupScreen(
                 Segmented(listOf("Cats + X's", "Cats only"), if (o.answerX) 0 else 1) { onOverlay(o.copy(answerX = it == 0)) }
             }
 
+            SectionTitle("X button")
+            Card {
+                SwitchRow("Remove wrong X's", "Clears X's on cells where a cat belongs", o.clearWrongX) { onOverlay(o.copy(clearWrongX = it)) }
+            }
+
             SectionTitle("Appearance")
             Card {
                 Segmented(ThemeMode.entries.map { it.label }, state.themeMode.ordinal) { onThemeMode(ThemeMode.entries[it]) }

@@ -61,10 +61,16 @@ object MovePlanner {
     /** Drags clearing the X's in [cells]; they never cross any other cell. */
     fun clearDrags(b: Board, cells: Collection<Int>): List<Tap> = walks(b.n, cells.toSet(), cells.toSet()).map { drag(b, it) }
 
-    /** X's on cells outside [want] ∪ [keep] (marked by mistake), and [want] cells still EMPTY (missed). */
-    fun xErrors(b: Board, want: Set<Int>, keep: Set<Int>): Pair<List<Int>, List<Int>> =
-        (0 until b.n * b.n).filter { b.state[it] == Cell.X && it !in want && it !in keep } to
-            want.filter { b.state[it] == Cell.EMPTY }
+    /** X's sitting on cells where the solution puts a cat. */
+    fun wrongXs(b: Board, sol: IntArray): List<Int> = remaining(b, sol).filter { b.state[it] == Cell.X }
+
+    /**
+     * The X button, from one read: mark every cell the placed cats rule out (colour, row, column, 3x3 ring), and when
+     * [clearWrong] also clear the X's on [wrong] (solution) cells first. No re-read or fix rounds: those stalled when the
+     * board changed under them (cats placed meanwhile).
+     */
+    fun xButtonTaps(b: Board, wrong: List<Int>, clearWrong: Boolean): List<Tap> =
+        if (clearWrong && wrong.isNotEmpty()) fix(b, wrong, xTargets(b)).first else xTaps(b)
 
     /** Clears [wrong] X's, then marks [missing] cells. Returns the gestures and the state they leave. */
     fun fix(b: Board, wrong: List<Int>, missing: List<Int>): Pair<List<Tap>, Array<Cell>> {
