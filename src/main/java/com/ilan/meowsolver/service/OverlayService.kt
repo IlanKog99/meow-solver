@@ -299,16 +299,22 @@ class OverlayService : AccessibilityService() {
 
     private fun markX(): Unit = withBoard { b, sol ->
         val wrong = sol?.let { MovePlanner.wrongXs(b, it) } ?: emptyList()
+        // Clearing a cell that is really EMPTY (X misread mid-animation) would mark it instead: confirm with a second read first.
+        if (settings.clearWrongX && wrong.isNotEmpty()) confirmRead(b, needSolution = true) { b2, sol2 -> runX(b2, sol2) }
+        else runX(b, sol)
+    }
+
+    private fun runX(b: Board, sol: IntArray?) {
+        val wrong = sol?.let { MovePlanner.wrongXs(b, it) } ?: emptyList()
         val clear = settings.clearWrongX && wrong.isNotEmpty()
         val marked = MovePlanner.xTargets(b).size
-        if (marked == 0 && !clear) return@withBoard done(if (wrong.isEmpty()) "Nothing to mark" else wrongNote(wrong.size))
-        runTaps(MovePlanner.xButtonTaps(b, wrong, settings.clearWrongX)) {
-            listOfNotNull(
-                "Marked $marked cells".takeIf { marked > 0 },
-                if (clear) "cleared ${wrong.size} wrong X's" else wrong.takeIf { it.isNotEmpty() }?.let { wrongNote(it.size) },
-                "a placed cat is wrong".takeIf { sol == null && b.cats.isNotEmpty() },
-            ).joinToString(" · ")
-        }
+        val note = listOfNotNull(
+            "Marked $marked cells".takeIf { marked > 0 },
+            if (clear) "cleared ${wrong.size} wrong X's" else wrong.takeIf { it.isNotEmpty() }?.let { wrongNote(it.size) },
+            "a placed cat is wrong".takeIf { sol == null && b.cats.isNotEmpty() },
+        ).joinToString(" · ")
+        if (marked == 0 && !clear) return done(note.ifEmpty { "Nothing to mark" })
+        runTaps(MovePlanner.xButtonTaps(b, wrong, settings.clearWrongX)) { note }
     }
 
     private fun wrongNote(k: Int) = "$k X's on cat cells"
