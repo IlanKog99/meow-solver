@@ -32,7 +32,6 @@ import com.ilan.meowsolver.core.Board
 import com.ilan.meowsolver.core.BoardNotFound
 import com.ilan.meowsolver.core.BoardReader
 import com.ilan.meowsolver.core.Cell
-import com.ilan.meowsolver.core.Check
 import com.ilan.meowsolver.core.DebugLog
 import com.ilan.meowsolver.core.MovePlanner
 import com.ilan.meowsolver.core.OverlaySettings
@@ -65,7 +64,6 @@ class OverlayService : AccessibilityService() {
         private const val AUTO_SETTLE_MS = 400L // let the game animate before re-reading
         private const val STOP_GUARD_MS = 1000L // covers a slow press on Stop (cancel fires on finger-down, click on finger-up)
         private const val MAX_FIX_ROUNDS = 3
-        private const val FIX_FAIL = "Couldn't place all cats — tap Answer again"
         private const val NO_SOLUTION = "No solution — a placed cat is wrong"
         private const val READ_FAIL = "Couldn't read the screen. Try again"
         private const val UNSTABLE = "Board keeps changing — tap again"
@@ -370,7 +368,7 @@ class OverlayService : AccessibilityService() {
         if (panel.autoRunning) { stopAnswer(); return }
         if (panel.busy || SystemClock.uptimeMillis() - stoppedAt < STOP_GUARD_MS) return
         panel = panel.copy(busy = true, autoRunning = true, status = "Placing cats…")
-        answerStep(fixes = 0, first = true)
+        answerRun()
     }
 
     private fun stopAnswer() {
@@ -380,27 +378,15 @@ class OverlayService : AccessibilityService() {
         done("Stopped")
     }
 
-    /** One read → check → act round. First round plans everything but the last cat; later rounds fix or finish. */
-    private fun answerStep(fixes: Int, first: Boolean): Unit =
-        if (first) withBoard(internal = true) { b, sol -> answerAct(b, sol, fixes, true, confirmed = true) }
-        else settleThen(needSolution = true) { b, sol -> answerAct(b, sol, fixes, false, confirmed = false) }
-
-    private fun answerAct(b: Board, sol: IntArray?, fixes: Int, first: Boolean, confirmed: Boolean) {
-        panel = panel.copy(status = "Placing cats… ${b.cats.size}/${b.n}")
-        when (val c = AutoSolver.check(b, sol)) {
-            Check.Solved -> done("Solved")
-            Check.NoSolution -> done(NO_SOLUTION)
-            is Check.LastOnly -> autoTaps(AutoSolver.lastCatTaps(b, c.cell)) {
-                marks = marks.copy(rings = marks.rings - c.cell, hint = marks.hint.takeIf { it != c.cell })
-                done("Solved")
-            }
-            is Check.Missing ->
-                if (!first && fixes >= MAX_FIX_ROUNDS) done(FIX_FAIL)
-                // A missed cat or X may just be mid-animation: only re-tap what a second read also shows.
-                else if (!confirmed) confirmRead(b, needSolution = true) { b2, sol2 -> answerAct(b2, sol2, fixes, false, confirmed = true) }
-                else autoTaps(AutoSolver.replan(b, sol!!, first, settings.order, settings.reverse, settings.answerX)) {
-                    answerStep(if (first) 0 else fixes + 1, first = false)
-                }
+    /** One read, then every missing cat (X's after all but the last) in a single run. The game rejects a wrong cat, so no re-check. */
+    private fun answerRun() = withBoard(internal = true) { b, sol ->
+        sol ?: return@withBoard done(NO_SOLUTION)
+        val todo = MovePlanner.remaining(b, sol)
+        if (todo.isEmpty()) return@withBoard done("Solved")
+        panel = panel.copy(status = "Placing ${todo.size} cats…")
+        autoTaps(AutoSolver.plan(b, sol, settings.order, settings.reverse, settings.answerX)) {
+            marks = marks.copy(rings = marks.rings - todo.toSet(), hint = marks.hint.takeIf { it !in todo })
+            done("Placed ${todo.size} cats")
         }
     }
 
